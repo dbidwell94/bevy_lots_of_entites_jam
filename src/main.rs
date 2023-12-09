@@ -1,4 +1,5 @@
 mod assets;
+mod pawn;
 
 use assets::{rocks::RockAsset, DirtTile, GameAssets, GroundBase};
 use bevy::{prelude::*, transform::commands};
@@ -18,7 +19,9 @@ const PERLIN_DIVIDER: f32 = 75.;
 pub enum GameState {
     #[default]
     Loading,
+    WorldSpawn,
     Main,
+    Paused,
 }
 
 #[derive(Actionlike, Reflect, Clone, Hash, PartialEq, Eq, Debug)]
@@ -30,14 +33,23 @@ pub enum Input {
 fn main() {
     App::new()
         .add_state::<GameState>()
-        .add_loading_state(LoadingState::new(GameState::Loading).continue_to_state(GameState::Main))
-        .add_plugins((DefaultPlugins, GameAssets))
+        .add_loading_state(
+            LoadingState::new(GameState::Loading).continue_to_state(GameState::WorldSpawn),
+        )
+        .add_plugins((
+            DefaultPlugins.build().set(ImagePlugin::default_nearest()),
+            GameAssets,
+        ))
         .add_plugins(InputManagerPlugin::<Input>::default())
+        .add_plugins(pawn::PawnPlugin)
         .add_systems(
-            OnEnter(GameState::Main),
+            OnEnter(GameState::WorldSpawn),
             (build_map, spawn_stone_tiles.after(build_map)),
         )
-        .add_systems(Update, pan_and_zoom_camera)
+        .add_systems(
+            Update,
+            pan_and_zoom_camera.run_if(in_state(GameState::Main)),
+        )
         .init_resource::<WorldNoise>()
         .run();
 }
@@ -130,7 +142,8 @@ fn build_map(
             perlin_location.x = offset_x as f32;
             perlin_location.y = offset_y as f32;
 
-            let noise_value = simplex_noise_2d_seeded(perlin_location / PERLIN_DIVIDER, world_noise.seed);
+            let noise_value =
+                simplex_noise_2d_seeded(perlin_location / PERLIN_DIVIDER, world_noise.seed);
             world_noise.base_world[x][y] = noise_value;
 
             let noisy_bevy_value =
@@ -158,21 +171,27 @@ fn get_dirt_texture_facing_grass(
         ..default()
     };
 
+    let mut found_grass = false;
+
     // middle bottom check
     if y > &0 && base_world[*x][*y - 1] >= GRASS_CUTOFF {
         sprite.index = DirtTile::BottomMiddle as usize;
+        found_grass = true;
     }
     // middle top check
     if y < &(SIZE - 1) && base_world[*x][*y + 1] >= GRASS_CUTOFF {
         sprite.index = DirtTile::TopMiddle as usize;
+        found_grass = true;
     }
     // middle left check
     if x > &0 && base_world[*x - 1][*y] >= GRASS_CUTOFF {
         sprite.index = DirtTile::MiddleLeft as usize;
+        found_grass = true;
     }
     // middle right check
     if x < &(SIZE - 1) && base_world[*x + 1][*y] >= GRASS_CUTOFF {
         sprite.index = DirtTile::MiddleRight as usize;
+        found_grass = true;
     }
 
     // left check AND lower check
@@ -182,6 +201,7 @@ fn get_dirt_texture_facing_grass(
         && base_world[*x][*y - 1] >= GRASS_CUTOFF
     {
         sprite.index = DirtTile::BottomLeft as usize;
+        found_grass = true;
     }
     // right check AND lower check
     if x < &(SIZE - 1)
@@ -190,6 +210,7 @@ fn get_dirt_texture_facing_grass(
         && base_world[*x][*y - 1] >= GRASS_CUTOFF
     {
         sprite.index = DirtTile::BottomRight as usize;
+        found_grass = true;
     }
     // left check AND upper check
     if x > &0
@@ -198,6 +219,7 @@ fn get_dirt_texture_facing_grass(
         && base_world[*x][*y + 1] >= GRASS_CUTOFF
     {
         sprite.index = DirtTile::TopLeft as usize;
+        found_grass = true;
     }
     // right check AND upper check
     if x < &(SIZE - 1)
@@ -206,6 +228,26 @@ fn get_dirt_texture_facing_grass(
         && base_world[*x][*y + 1] >= GRASS_CUTOFF
     {
         sprite.index = DirtTile::TopRight as usize;
+        found_grass = true;
+    }
+
+    if !found_grass {
+        // check top left
+        if x > &0 && y < &(SIZE - 1) && base_world[*x - 1][*y + 1] >= GRASS_CUTOFF {
+            sprite.index = DirtTile::OutsideTopLeft as usize;
+        }
+        // check top right
+        if x < &(SIZE - 1) && y < &(SIZE - 1) && base_world[*x + 1][*y + 1] >= GRASS_CUTOFF {
+            sprite.index = DirtTile::OutsideTopRight as usize;
+        }
+        // check bottom left
+        if x > &0 && y > &0 && base_world[*x - 1][*y - 1] >= GRASS_CUTOFF {
+            sprite.index = DirtTile::OutsideBottomLeft as usize;
+        }
+        // check bottom right
+        if x < &(SIZE - 1) && y > &0 && base_world[*x + 1][*y - 1] >= GRASS_CUTOFF {
+            sprite.index = DirtTile::OutsideBottomRight as usize;
+        }
     }
 
     sprite
@@ -307,7 +349,8 @@ fn spawn_stone_tiles(
             perlin_location.x = offset_x as f32;
             perlin_location.y = offset_y as f32;
 
-            let noise_value = simplex_noise_2d_seeded(perlin_location / PERLIN_DIVIDER, world_noise.seed);
+            let noise_value =
+                simplex_noise_2d_seeded(perlin_location / PERLIN_DIVIDER, world_noise.seed);
 
             if noise_value > 0.5 {
                 let noisy_bevy_value =
