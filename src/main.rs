@@ -1,15 +1,18 @@
+// This attr removes the console on release builds on Windows
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod assets;
+mod factory;
 mod pawn;
 mod stone;
 
-use assets::{rocks::RockAsset, DirtTile, GameAssets, GroundBase};
-use bevy::{prelude::*, transform::commands};
+use assets::{DirtTile, GameAssets, GroundBase};
+use bevy::{prelude::*, window::PrimaryWindow, asset::AssetMetaCheck};
 use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 use bevy_easings::*;
 use leafwing_input_manager::{axislike::VirtualAxis, prelude::*};
 use noisy_bevy::simplex_noise_2d_seeded;
 use rand::prelude::*;
-use stone::StoneKind;
 
 const SIZE: usize = 256;
 const DIRT_CUTOFF: f32 = -0.75;
@@ -38,21 +41,31 @@ fn main() {
         .add_loading_state(
             LoadingState::new(GameState::Loading).continue_to_state(GameState::WorldSpawn),
         )
+        .insert_resource(AssetMetaCheck::Never)
         .add_plugins((
-            DefaultPlugins.build().set(ImagePlugin::default_nearest()),
+            DefaultPlugins
+                .build()
+                .set(ImagePlugin::default_nearest())
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        canvas: Some("#canvas".into()),
+                        fit_canvas_to_parent: true,
+                        ..default()
+                    }),
+                    ..default()
+                }),
             GameAssets,
         ))
         .add_plugins(InputManagerPlugin::<Input>::default())
-        .add_plugins(pawn::PawnPlugin)
-        .add_systems(
-            OnEnter(GameState::WorldSpawn),
-            (build_map, spawn_stone_tiles.after(build_map)),
-        )
+        .add_plugins((pawn::PawnPlugin, stone::StonePlugin, factory::FactoryPlugin))
+        .add_systems(OnEnter(GameState::WorldSpawn), build_map)
+        .add_systems(Update, update_cursor_position)
         .add_systems(
             Update,
             pan_and_zoom_camera.run_if(in_state(GameState::Main)),
         )
         .init_resource::<WorldNoise>()
+        .init_resource::<CursorPosition>()
         .run();
 }
 
@@ -63,7 +76,7 @@ struct CameraSmoothTarget {
 }
 
 #[derive(Resource)]
-struct WorldNoise {
+pub struct WorldNoise {
     pub base_world: [[f32; SIZE]; SIZE],
     pub base_resources: [[f32; SIZE]; SIZE],
     pub seed: f32,
@@ -81,6 +94,9 @@ impl Default for WorldNoise {
     }
 }
 
+#[derive(Resource, Default)]
+pub struct CursorPosition(pub Option<Vec2>);
+
 #[derive(Component)]
 struct GameTile;
 
@@ -91,7 +107,7 @@ enum TileType {
     Grass,
 }
 
-fn build_map(
+pub fn build_map(
     mut commands: Commands,
     mut world_noise: ResMut<WorldNoise>,
     asset_server: Res<AssetServer>,
@@ -307,6 +323,10 @@ fn spawn_world_tiles(
                         ..default()
                     },
                     GameTile,
+                    AabbGizmo {
+                        color: Some(Color::RED),
+                        ..default()
+                    },
                 ));
             }
             if seed_value >= &GRASS_CUTOFF {
@@ -327,153 +347,6 @@ fn spawn_world_tiles(
                         ..default()
                     },
                     GameTile,
-                ));
-            }
-        }
-    }
-}
-
-type StoneGrid = [[Option<StoneKind>; SIZE]; SIZE];
-
-fn get_neighbor_stone_kind(grid: &StoneGrid, x: usize, y: usize) -> Option<StoneKind> {
-    // check top
-    if y < SIZE - 1 && grid[x][y + 1].is_some() {
-        return grid[x][y + 1];
-    }
-    // check bottom
-    if y > 0 && grid[x][y - 1].is_some() {
-        return grid[x][y - 1];
-    }
-    // check left
-    if x > 0 && grid[x - 1][y].is_some() {
-        return grid[x - 1][y];
-    }
-    // check right
-    if x < SIZE - 1 && grid[x + 1][y].is_some() {
-        return grid[x + 1][y];
-    }
-
-    // check top left
-    if x > 0 && y < SIZE - 1 && grid[x - 1][y + 1].is_some() {
-        return grid[x - 1][y + 1];
-    }
-
-    // check top right
-    if x < SIZE - 1 && y < SIZE - 1 && grid[x + 1][y + 1].is_some() {
-        return grid[x + 1][y + 1];
-    }
-
-    // check bottom left
-    if x > 0 && y > 0 && grid[x - 1][y - 1].is_some() {
-        return grid[x - 1][y - 1];
-    }
-
-    // check bottom right
-    if x < SIZE - 1 && y > 0 && grid[x + 1][y - 1].is_some() {
-        return grid[x + 1][y - 1];
-    }
-
-    None
-}
-
-fn stone_kind_to_resource<'a>(
-    stone_kind: StoneKind,
-    capped_rock: &'a Res<assets::rocks::CappedRock>,
-    red_rock: &'a Res<assets::rocks::RedRock>,
-    salt_rock: &'a Res<assets::rocks::SaltRock>,
-    stone_rock: &'a Res<assets::rocks::StoneRock>,
-    tan_rock: &'a Res<assets::rocks::TanRock>,
-) -> Box<&'a dyn RockAsset> {
-    match stone_kind {
-        StoneKind::CappedRock => Box::new(capped_rock.as_ref()),
-        StoneKind::RedRock => Box::new(red_rock.as_ref()),
-        StoneKind::SaltRock => Box::new(salt_rock.as_ref()),
-        StoneKind::StoneRock => Box::new(stone_rock.as_ref()),
-        StoneKind::TanRock => Box::new(tan_rock.as_ref()),
-    }
-}
-
-fn spawn_stone_tiles(
-    mut commands: Commands,
-    capped_rock: Res<assets::rocks::CappedRock>,
-    red_rock: Res<assets::rocks::RedRock>,
-    salt_rock: Res<assets::rocks::SaltRock>,
-    stone_rock: Res<assets::rocks::StoneRock>,
-    tan_rock: Res<assets::rocks::TanRock>,
-    world_noise: Res<WorldNoise>,
-) {
-    let mut perlin_location = Vec2::new(0., 0.);
-
-    let mut stone_kinds: StoneGrid = [[Option::<StoneKind>::None; SIZE]; SIZE];
-
-    for x in 0..SIZE {
-        for y in 0..SIZE {
-            let offset_x = x + world_noise.offset as usize;
-            let offset_y = y + world_noise.offset as usize;
-            perlin_location.x = offset_x as f32;
-            perlin_location.y = offset_y as f32;
-
-            let noise_value =
-                simplex_noise_2d_seeded(perlin_location / PERLIN_DIVIDER, world_noise.seed);
-
-            if noise_value > 0.70 {
-                let noisy_bevy_value =
-                    simplex_noise_2d_seeded(perlin_location / 150., world_noise.seed);
-
-                let stone_kind: StoneKind;
-
-                let rock: &dyn RockAsset = if noisy_bevy_value < -0.5 {
-                    stone_kind = StoneKind::CappedRock;
-                    capped_rock.as_ref()
-                } else if noisy_bevy_value >= -0.5 && noisy_bevy_value < -0.25 {
-                    stone_kind = StoneKind::RedRock;
-                    red_rock.as_ref()
-                } else if noisy_bevy_value >= -0.25 && noisy_bevy_value < 0. {
-                    stone_kind = StoneKind::SaltRock;
-                    salt_rock.as_ref()
-                } else if noisy_bevy_value >= 0. && noisy_bevy_value < 0.25 {
-                    stone_kind = StoneKind::StoneRock;
-                    stone_rock.as_ref()
-                } else {
-                    stone_kind = StoneKind::TanRock;
-                    tan_rock.as_ref()
-                };
-
-                let (rock, stone_kind) = get_neighbor_stone_kind(&stone_kinds, x, y)
-                    .map(|kind| {
-                        (
-                            stone_kind_to_resource(
-                                kind,
-                                &capped_rock,
-                                &red_rock,
-                                &salt_rock,
-                                &stone_rock,
-                                &tan_rock,
-                            ),
-                            kind,
-                        )
-                    })
-                    .unwrap_or((Box::new(rock), stone_kind));
-
-                stone_kinds[x][y] = Some(stone_kind);
-
-                commands.spawn((
-                    SpriteBundle {
-                        sprite: Sprite {
-                            color: Color::WHITE,
-                            custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
-                            ..default()
-                        },
-                        texture: rock.get_large(),
-                        transform: Transform::from_xyz(
-                            x as f32 * TILE_SIZE,
-                            y as f32 * TILE_SIZE,
-                            0.5,
-                        ),
-                        ..default()
-                    },
-                    GameTile,
-                    stone_kind,
                 ));
             }
         }
@@ -521,4 +394,33 @@ fn pan_and_zoom_camera(
         .lerp(camera_target.target, 10. * delta);
 
     projection.scale = projection.scale.lerp(&camera_target.zoom, &(10. * delta));
+}
+
+fn update_cursor_position(
+    mut cursor_world_position: ResMut<CursorPosition>,
+    q_window: Query<&Window, With<PrimaryWindow>>,
+    q_camera: Query<(&Camera, &GlobalTransform)>,
+) {
+    let Ok((camera, camera_transform)) = q_camera.get_single() else {
+        return;
+    };
+
+    let Ok(window) = q_window.get_single() else {
+        return;
+    };
+
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    let world_pos = camera
+        .viewport_to_world(camera_transform, cursor_position.clone())
+        .map(|ray| ray.origin.truncate());
+
+    cursor_world_position.0 = world_pos.map(|v| {
+        Vec2::new(
+            ((v.x - TILE_SIZE / 2.) as i32 / TILE_SIZE as i32) as f32,
+            ((v.y - TILE_SIZE / 2.) as i32 / TILE_SIZE as i32) as f32,
+        )
+    });
 }

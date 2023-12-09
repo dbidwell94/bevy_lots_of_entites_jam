@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Bevy Game</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="index.css" rel="stylesheet" />
+  </head>
+
+  <body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+      import init from "./lots_of_entities.js";
+
+      async function run() {
+        await init();
+      }
+
+      run().catch(console.error);
+    </script>
+  </body>
+</html>
