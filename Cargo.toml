@@ -1,0 +1,25 @@
+[package]
+name = "lots_of_entities"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy = { version = "0.12", features = ["wayland"] }
+noisy_bevy = "0.5.0"
+rand = "0.8.5"
+leafwing-input-manager = "0.11.2"
+bevy_easings = "0.12"
+bevy_asset_loader = { version = "0.18.0", features = ["2d"] }
+
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
