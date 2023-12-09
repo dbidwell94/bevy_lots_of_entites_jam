@@ -7,7 +7,7 @@ pub mod rocks {
     use bevy::prelude::*;
     use bevy_asset_loader::prelude::*;
 
-    use crate::GameState;
+    use crate::{stone::StoneKind, GameState};
 
     pub struct RockPlugin;
 
@@ -97,6 +97,7 @@ pub mod rocks {
         fn get_medium(&self) -> Handle<Image>;
         fn get_medium_small(&self) -> Handle<Image>;
         fn get_small(&self) -> Handle<Image>;
+        fn get_stone_kind(&self) -> StoneKind;
     }
 
     impl RockAsset for CappedRock {
@@ -114,6 +115,9 @@ pub mod rocks {
         }
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
+        }
+        fn get_stone_kind(&self) -> StoneKind {
+            StoneKind::CappedRock
         }
     }
 
@@ -133,6 +137,9 @@ pub mod rocks {
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
         }
+        fn get_stone_kind(&self) -> StoneKind {
+            StoneKind::RedRock
+        }
     }
 
     impl RockAsset for SaltRock {
@@ -150,6 +157,9 @@ pub mod rocks {
         }
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
+        }
+        fn get_stone_kind(&self) -> StoneKind {
+            StoneKind::SaltRock
         }
     }
 
@@ -169,6 +179,9 @@ pub mod rocks {
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
         }
+        fn get_stone_kind(&self) -> StoneKind {
+            StoneKind::StoneRock
+        }
     }
 
     impl RockAsset for TanRock {
@@ -186,6 +199,9 @@ pub mod rocks {
         }
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
+        }
+        fn get_stone_kind(&self) -> StoneKind {
+            StoneKind::TanRock
         }
     }
 }
