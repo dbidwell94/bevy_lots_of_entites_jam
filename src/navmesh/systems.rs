@@ -77,10 +77,10 @@ pub fn listen_for_pathfinding_requests(
         let result = astar(
             &UsizeVec { x, y },
             |&UsizeVec { x, y }| {
-                let up = (x, y + 1);
-                let down = (x, y - 1);
-                let left = (x - 1, y);
-                let right = (x + 1, y);
+                let up = (x, y.saturating_add(1));
+                let down = (x, y.saturating_sub(1));
+                let left = (x.saturating_sub(1), y);
+                let right = (x.saturating_add(1), y);
 
                 let neighbors = [up, down, left, right]
                     .iter()
@@ -88,7 +88,7 @@ pub fn listen_for_pathfinding_requests(
                         navmesh
                             .get(*x)
                             .and_then(|row| row.get(*y))
-                            .map(|tile| tile.walkable)
+                            .map(|tile| tile.walkable || (*x == end_x && *y == end_y))
                             .unwrap_or(false)
                     })
                     .map(|(x, y)| (UsizeVec { x: *x, y: *y }, 0)) // Modify this line

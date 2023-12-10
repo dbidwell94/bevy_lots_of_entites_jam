@@ -1,6 +1,6 @@
 use super::components::pawn_status::{Idle, Pathfinding, PawnStatus};
 use crate::factory::components::{Factory, Placed};
-use crate::navmesh::components::{Navmesh, PathfindRequest};
+use crate::navmesh::components::{Navmesh, PathfindAnswer, PathfindRequest};
 use crate::stone::StoneKind;
 use crate::TILE_SIZE;
 use crate::{
@@ -121,6 +121,15 @@ pub fn work_idle_pawns(
     }
 }
 
-pub fn listen_for_pathfinding_answers() {
-    
+pub fn listen_for_pathfinding_answers(
+    mut answer_events: EventReader<PathfindAnswer>,
+    q_pawns: Query<(Entity), With<Pawn>>,
+) {
+    for evt in answer_events.read() {
+        let Ok(pawn) = q_pawns.get(evt.entity) else {
+            continue;
+        };
+
+        info!("Pawn {:?} got path {:?}", pawn, evt.path);
+    }
 }
