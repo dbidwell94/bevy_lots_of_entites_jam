@@ -15,6 +15,7 @@ impl Plugin for PawnPlugin {
                 (
                     systems::work_idle_pawns,
                     systems::listen_for_pathfinding_answers.after(systems::work_idle_pawns),
+                    systems::move_pawn.after(systems::listen_for_pathfinding_answers),
                 ),
             );
     }

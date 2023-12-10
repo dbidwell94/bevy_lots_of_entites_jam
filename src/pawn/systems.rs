@@ -11,8 +11,10 @@ use crate::{
 use bevy::prelude::*;
 use bevy::utils::HashSet;
 use rand::prelude::*;
+use std::collections::VecDeque;
 
 const INITIAL_PAWN_COUNT: usize = 10;
+const MOVE_SPEED: f32 = 45.;
 
 pub fn initial_pawn_spawn(
     mut commands: Commands,
@@ -35,7 +37,10 @@ pub fn initial_pawn_spawn(
         let y = factory_transform.translation().y + random_angle.sin() * radius;
 
         commands.spawn(PawnBundle {
-            pawn: Pawn,
+            pawn: Pawn {
+                move_path: VecDeque::new(),
+                move_to: None,
+            },
             character_facing: CharacterFacing::Left,
             name: Name::new("Pawn"),
             sprite_bundle: SpriteSheetBundle {
@@ -123,13 +128,37 @@ pub fn work_idle_pawns(
 
 pub fn listen_for_pathfinding_answers(
     mut answer_events: EventReader<PathfindAnswer>,
-    q_pawns: Query<(Entity), With<Pawn>>,
+    mut q_pawns: Query<&mut Pawn, With<Pawn>>,
 ) {
     for evt in answer_events.read() {
-        let Ok(pawn) = q_pawns.get(evt.entity) else {
+        let Ok(mut pawn) = q_pawns.get_mut(evt.entity) else {
             continue;
         };
 
-        info!("Pawn {:?} got path {:?}", pawn, evt.path);
+        if let Some(path) = &evt.path {
+            pawn.move_path = path.clone().into();
+        }
+    }
+}
+
+pub fn move_pawn(mut q_pawn: Query<(&mut Transform, &mut Pawn)>, time: Res<Time>) {
+    for (mut transform, mut pawn) in &mut q_pawn {
+        let current_grid = transform.translation.world_pos_to_tile();
+
+        if pawn.move_to.is_none() {
+            pawn.move_to = pawn.move_path.pop_front();
+        }
+
+        let Some(path) = pawn.move_to else {
+            continue;
+        };
+
+        if (path - current_grid).length() < 1.1 {
+            pawn.move_to = pawn.move_path.pop_front();
+        }
+
+        let direction = (path - current_grid).normalize_or_zero();
+
+        transform.translation += direction.extend(0.) * MOVE_SPEED * time.delta_seconds();
     }
 }

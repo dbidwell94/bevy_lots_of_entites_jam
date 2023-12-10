@@ -34,4 +34,5 @@ pub struct PathfindRequest {
 pub struct PathfindAnswer {
     pub path: Option<Vec<Vec2>>,
     pub entity: Entity,
+    pub target: Vec2,
 }

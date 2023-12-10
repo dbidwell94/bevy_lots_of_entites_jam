@@ -1,8 +1,13 @@
+use std::collections::VecDeque;
+
 use crate::assets::CharacterFacing;
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct Pawn;
+pub struct Pawn {
+    pub move_path: VecDeque<Vec2>,
+    pub move_to: Option<Vec2>,
+}
 
 #[derive(Bundle)]
 pub struct PawnBundle<T: Component + pawn_status::Status> {

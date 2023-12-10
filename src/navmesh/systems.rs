@@ -111,6 +111,7 @@ pub fn listen_for_pathfinding_requests(
         pathfinding_event_writer.send(PathfindAnswer {
             path: result,
             entity: request.entity,
+            target: request.end,
         });
     }
 }

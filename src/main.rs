@@ -10,7 +10,7 @@ mod ui;
 mod utils;
 
 use assets::{DirtTile, GameAssets, GroundBase};
-use bevy::{asset::AssetMetaCheck, ecs::world, prelude::*, window::PrimaryWindow};
+use bevy::{asset::AssetMetaCheck, prelude::*, window::PrimaryWindow};
 use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 use bevy_easings::*;
 use leafwing_input_manager::{axislike::VirtualAxis, prelude::*};
@@ -310,7 +310,7 @@ fn spawn_world_tiles(
         for y in 0..SIZE {
             let seed_value = &base_world[x][y];
 
-            let mut nav_tile = &mut navmesh.0[x][y];
+            let nav_tile = &mut navmesh.0[x][y];
 
             if seed_value >= &DIRT_CUTOFF && seed_value < &GRASS_CUTOFF {
                 // Dirt
