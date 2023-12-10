@@ -24,7 +24,7 @@ fn create_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         &mut commands,
         |p| {
             text(
-                "Use left click to place your factory.",
+                "Use left click to place your pawn factory. Pawns will spawn around the factory and proceed to collect resources from the nearest ore deposit.",
                 c_pixel_text,
                 text_style,
                 p,

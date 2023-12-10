@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, text::BreakLineOn};
 
 /// Display: Flex centered on screen
 pub fn root_full_screen(justify: Option<JustifyContent>, align: Option<AlignItems>) -> impl Fn(&mut NodeBundle) {
@@ -25,7 +25,9 @@ pub fn c_pixel_text(_: &AssetServer, tb: &mut TextBundle) {
         ..default()
     };
 
-    tb.background_color = BackgroundColor(Color::rgba(0., 0., 0., 0.5));
+    tb.text.alignment = TextAlignment::Center;
+    tb.text.linebreak_behavior = BreakLineOn::WordBoundary;
+    tb.background_color = BackgroundColor(Color::rgba(0., 0., 0., 0.85));
 }
 
 pub fn text_style(assets: &AssetServer, ts: &mut TextStyle) {
