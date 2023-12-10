@@ -29,3 +29,9 @@ pub struct PathfindRequest {
     pub end: Vec2,
     pub entity: Entity,
 }
+
+#[derive(Debug, Event)]
+pub struct PathfindAnswer {
+    pub path: Option<Vec<Vec2>>,
+    pub entity: Entity,
+}

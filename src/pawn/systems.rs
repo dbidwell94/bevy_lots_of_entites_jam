@@ -1,6 +1,6 @@
 use super::components::pawn_status::{Idle, Pathfinding, PawnStatus};
 use crate::factory::components::{Factory, Placed};
-use crate::navmesh::components::Navmesh;
+use crate::navmesh::components::{Navmesh, PathfindRequest};
 use crate::stone::StoneKind;
 use crate::TILE_SIZE;
 use crate::{
@@ -56,17 +56,10 @@ pub fn initial_pawn_spawn(
 
 pub fn work_idle_pawns(
     mut commands: Commands,
-    mut q_pawns: Query<
-        (
-            Entity,
-            &PawnStatus<Idle>,
-            &CarriedResources,
-            &mut Transform,
-        ),
-        With<Pawn>,
-    >,
+    mut q_pawns: Query<(Entity, &PawnStatus<Idle>, &CarriedResources, &mut Transform), With<Pawn>>,
     q_stones: Query<Entity, With<StoneKind>>,
     navmesh: Res<Navmesh>,
+    mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
     let navmesh = &navmesh.0;
 
@@ -93,7 +86,6 @@ pub fn work_idle_pawns(
         let grid_x = grid_location.x as usize;
         let grid_y = grid_location.y as usize;
 
-
         // search the navmesh for non-walkable tiles, and see if the entities within are in q_stones
         let mut stone_location = None;
 
@@ -119,6 +111,16 @@ pub fn work_idle_pawns(
                 search_radius += 1;
             }
         }
-        info!("Pawn found some resources at: {:?}", stone_location);
+        if let Some(stone_location) = stone_location {
+            pathfinding_event_writer.send(PathfindRequest {
+                start: grid_location,
+                end: stone_location,
+                entity,
+            });
+        }
     }
+}
+
+pub fn listen_for_pathfinding_answers() {
+    
 }

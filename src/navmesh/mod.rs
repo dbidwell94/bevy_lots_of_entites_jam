@@ -1,7 +1,7 @@
 pub mod components;
 mod systems;
 
-use self::components::{Navmesh, PathfindRequest, ToggleNavmeshDebug};
+use self::components::{Navmesh, PathfindAnswer, PathfindRequest, ToggleNavmeshDebug};
 use bevy::prelude::*;
 
 pub struct NavmeshPlugin;
@@ -11,6 +11,8 @@ impl Plugin for NavmeshPlugin {
         app.init_resource::<Navmesh>()
             .init_resource::<ToggleNavmeshDebug>()
             .add_systems(Update, systems::debug_navmesh)
-            .add_event::<PathfindRequest>();
+            .add_systems(Update, systems::listen_for_pathfinding_requests)
+            .add_event::<PathfindRequest>()
+            .add_event::<PathfindAnswer>();
     }
 }

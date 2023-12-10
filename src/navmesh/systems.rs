@@ -3,6 +3,7 @@ use crate::utils::*;
 use crate::TILE_SIZE;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
+use pathfinding::prelude::*;
 
 pub fn debug_navmesh(
     navmesh: Res<Navmesh>,
@@ -26,7 +27,8 @@ pub fn debug_navmesh(
 
     for (x, row) in navmesh.0.iter().enumerate() {
         for (y, tile) in row.iter().enumerate() {
-            let tile_position = Vec2::new(x as f32, y as f32).tile_pos_to_world() + Vec2::new(TILE_SIZE / 2., TILE_SIZE / 2.);
+            let tile_position = Vec2::new(x as f32, y as f32).tile_pos_to_world()
+                + Vec2::new(TILE_SIZE / 2., TILE_SIZE / 2.);
 
             if !tile.walkable {
                 gizmos.rect_2d(
@@ -49,5 +51,66 @@ pub fn debug_navmesh(
                 );
             }
         }
+    }
+}
+
+pub fn listen_for_pathfinding_requests(
+    mut pathfinding_event_reader: EventReader<PathfindRequest>,
+    navmesh: Res<Navmesh>,
+    mut pathfinding_event_writer: EventWriter<PathfindAnswer>,
+) {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    struct UsizeVec {
+        x: usize,
+        y: usize,
+    }
+    let navmesh = &navmesh.0;
+    for request in pathfinding_event_reader.read() {
+        let Vec2 { x, y } = request.start;
+        let x = x as usize;
+        let y = y as usize;
+
+        let Vec2 { x: end_x, y: end_y } = request.end;
+        let end_x = end_x as usize;
+        let end_y = end_y as usize;
+
+        let result = astar(
+            &UsizeVec { x, y },
+            |&UsizeVec { x, y }| {
+                let up = (x, y + 1);
+                let down = (x, y - 1);
+                let left = (x - 1, y);
+                let right = (x + 1, y);
+
+                let neighbors = [up, down, left, right]
+                    .iter()
+                    .filter(|&(x, y)| {
+                        navmesh
+                            .get(*x)
+                            .and_then(|row| row.get(*y))
+                            .map(|tile| tile.walkable)
+                            .unwrap_or(false)
+                    })
+                    .map(|(x, y)| (UsizeVec { x: *x, y: *y }, 0)) // Modify this line
+                    .collect::<Vec<_>>();
+
+                return neighbors;
+            },
+            |&tile| {
+                (Vec2::new(tile.x as f32, tile.y as f32) - Vec2::new(end_x as f32, end_y as f32))
+                    .length() as i32
+            },
+            |UsizeVec { x, y }| x == &end_x && y == &end_y,
+        )
+        .map(|(data, _)| {
+            data.iter()
+                .map(|item| Vec2::new(item.x as f32, item.y as f32))
+                .collect::<Vec<_>>()
+        });
+
+        pathfinding_event_writer.send(PathfindAnswer {
+            path: result,
+            entity: request.entity,
+        });
     }
 }
