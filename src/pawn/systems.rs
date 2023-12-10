@@ -3,7 +3,6 @@ use crate::TILE_SIZE;
 use crate::{
     assets::{CharacterFacing, MalePawns},
     pawn::components::*,
-    GameState,
 };
 use bevy::prelude::*;
 use rand::prelude::*;
@@ -44,6 +43,21 @@ pub fn initial_pawn_spawn(
                 },
                 ..Default::default()
             },
+            pawn_status: PawnStatus::Idle,
+            resources: CarriedResources(0),
         });
     }
 }
+
+pub fn update_pawns(
+    mut q_pawns: Query<(Entity, &mut PawnStatus, &GlobalTransform, &CarriedResources), With<Pawn>>,
+) {
+    for (pawn_entity, mut pawn_stauts, pawn_transform, resources) in &mut q_pawns {
+        match *pawn_stauts {
+            PawnStatus::Idle => {}
+            _ => {}
+        }
+    }
+}
+
+pub fn pathfind_to_factory() {}
