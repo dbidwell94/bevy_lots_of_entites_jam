@@ -37,7 +37,11 @@ pub fn initial_pawn_spawn(
             sprite_bundle: SpriteSheetBundle {
                 texture_atlas: pawn,
                 transform: Transform::from_translation(Vec3::new(x, y, 1.)),
-                sprite: TextureAtlasSprite::new(CharacterFacing::Left as usize),
+                sprite: TextureAtlasSprite {
+                    anchor: bevy::sprite::Anchor::BottomLeft,
+                    index: CharacterFacing::Left as usize,
+                    ..default()
+                },
                 ..Default::default()
             },
         });

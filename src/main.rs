@@ -3,9 +3,11 @@
 
 mod assets;
 mod factory;
+mod navmesh;
 mod pawn;
 mod stone;
 mod ui;
+mod utils;
 
 use assets::{DirtTile, GameAssets, GroundBase};
 use bevy::{asset::AssetMetaCheck, ecs::world, prelude::*, window::PrimaryWindow};
@@ -14,6 +16,7 @@ use bevy_easings::*;
 use leafwing_input_manager::{axislike::VirtualAxis, prelude::*};
 use noisy_bevy::simplex_noise_2d_seeded;
 use rand::prelude::*;
+use utils::TranslationHelper;
 
 #[cfg(target_arch = "wasm32")]
 const SIZE: usize = 128;
@@ -39,6 +42,7 @@ pub enum Input {
     Pan,
     Zoom,
     Select,
+    Debug,
 }
 
 fn main() {
@@ -68,6 +72,7 @@ fn main() {
             stone::StonePlugin,
             factory::FactoryPlugin,
             ui::UIPlugin,
+            navmesh::NavmeshPlugin,
         ))
         .add_systems(OnEnter(GameState::WorldSpawn), build_map)
         .add_systems(Update, update_cursor_position)
@@ -129,6 +134,7 @@ pub fn build_map(
     mut world_noise: ResMut<WorldNoise>,
     asset_server: Res<AssetServer>,
     dirt_texture: Res<GroundBase>,
+    mut navmesh: ResMut<navmesh::components::Navmesh>,
 ) {
     let mut camera_bundle = Camera2dBundle::default();
 
@@ -165,6 +171,7 @@ pub fn build_map(
                     Input::Zoom,
                 )
                 .insert(MouseButton::Left, Input::Select)
+                .insert(KeyCode::Grave, Input::Debug)
                 .build(),
             ..default()
         },
@@ -194,6 +201,7 @@ pub fn build_map(
         &world_noise.base_world,
         &asset_server,
         &dirt_texture,
+        &mut navmesh,
     );
 }
 
@@ -205,6 +213,7 @@ fn get_dirt_texture_facing_grass(
     let mut sprite = TextureAtlasSprite {
         index: DirtTile::MiddleMiddle as usize,
         custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
+        anchor: bevy::sprite::Anchor::BottomLeft,
         ..default()
     };
 
@@ -295,47 +304,59 @@ fn spawn_world_tiles(
     base_world: &[[f32; SIZE]; SIZE],
     asset_server: &Res<AssetServer>,
     dirt_texture: &Res<GroundBase>,
+    navmesh: &mut ResMut<navmesh::components::Navmesh>,
 ) {
     for x in 0..SIZE {
         for y in 0..SIZE {
             let seed_value = &base_world[x][y];
 
+            let mut nav_tile = &mut navmesh.0[x][y];
+
             if seed_value >= &DIRT_CUTOFF && seed_value < &GRASS_CUTOFF {
                 // Dirt
-                commands.spawn((
-                    TileType::Dirt,
-                    SpriteSheetBundle {
-                        sprite: get_dirt_texture_facing_grass(base_world, &x, &y),
-                        texture_atlas: dirt_texture.dirt.clone(),
-                        transform: Transform::from_xyz(
-                            x as f32 * TILE_SIZE,
-                            y as f32 * TILE_SIZE,
-                            0.,
-                        ),
-                        ..default()
-                    },
-                    GameTile,
-                ));
+                let dirt_entity = commands
+                    .spawn((
+                        TileType::Dirt,
+                        SpriteSheetBundle {
+                            sprite: get_dirt_texture_facing_grass(base_world, &x, &y),
+                            texture_atlas: dirt_texture.dirt.clone(),
+                            transform: Transform::from_translation(
+                                Vec2::new(x as f32, y as f32).tile_pos_to_world().extend(0.),
+                            ),
+                            ..default()
+                        },
+                        GameTile,
+                    ))
+                    .id();
+
+                nav_tile.walkable = true;
+                nav_tile.weight = 1.;
+                nav_tile.occupied_by.insert(dirt_entity);
             }
             if seed_value >= &GRASS_CUTOFF {
                 // Grass
-                commands.spawn((
-                    TileType::Grass,
-                    SpriteBundle {
-                        sprite: Sprite {
-                            custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
+                let grass_entity = commands
+                    .spawn((
+                        TileType::Grass,
+                        SpriteBundle {
+                            sprite: Sprite {
+                                custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
+                                anchor: bevy::sprite::Anchor::BottomLeft,
+                                ..default()
+                            },
+                            texture: asset_server.load("grass.png"),
+                            transform: Transform::from_translation(
+                                Vec2::new(x as f32, y as f32).tile_pos_to_world().extend(0.),
+                            ),
                             ..default()
                         },
-                        texture: asset_server.load("grass.png"),
-                        transform: Transform::from_xyz(
-                            x as f32 * TILE_SIZE,
-                            y as f32 * TILE_SIZE,
-                            0.,
-                        ),
-                        ..default()
-                    },
-                    GameTile,
-                ));
+                        GameTile,
+                    ))
+                    .id();
+
+                nav_tile.walkable = true;
+                nav_tile.weight = 2.;
+                nav_tile.occupied_by.insert(grass_entity);
             }
         }
     }

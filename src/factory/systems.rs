@@ -1,7 +1,10 @@
 use super::components::*;
-use crate::{CursorPosition, GameState, TILE_SIZE};
+use crate::{navmesh, CursorPosition, GameState, GameTile, TILE_SIZE};
+use crate::{utils::*, SIZE};
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
+
+const FACTORY_SIZE: usize = 4;
 
 pub fn initial_spawn_factory(
     mut commands: Commands,
@@ -15,7 +18,7 @@ pub fn initial_spawn_factory(
                 cursor_position.0.unwrap_or(Vec2::ZERO).extend(1.),
             ),
             sprite: Sprite {
-                anchor: bevy::sprite::Anchor::BottomCenter,
+                anchor: bevy::sprite::Anchor::BottomLeft,
                 ..default()
             },
             ..Default::default()
@@ -40,17 +43,17 @@ pub fn clamp_factory_to_cursor_position(
         return;
     };
 
-    factory_transform.translation.x = cursor_position.x * TILE_SIZE + (TILE_SIZE / 2.);
-    factory_transform.translation.y = cursor_position.y * TILE_SIZE + (TILE_SIZE / 2.);
+    factory_transform.translation = (cursor_position.tile_pos_to_world()).extend(1.);
 }
 
 pub fn place_factory(
     mut commands: Commands,
-    q_factory: Query<Entity, (With<Factory>, Without<Placed>)>,
+    q_factory: Query<(Entity, &GlobalTransform), (With<Factory>, Without<Placed>)>,
     input: Query<&ActionState<crate::Input>>,
     mut game_state: ResMut<NextState<GameState>>,
+    mut navmesh: ResMut<navmesh::components::Navmesh>,
 ) {
-    let Ok(factory_entity) = q_factory.get_single() else {
+    let Ok((factory_entity, factory_transform)) = q_factory.get_single() else {
         return;
     };
 
@@ -59,8 +62,36 @@ pub fn place_factory(
     };
 
     if input.just_pressed(crate::Input::Select) {
-        commands.entity(factory_entity).insert(Placed);
+        let Vec2 { x, y } = factory_transform.translation().world_pos_to_tile();
+
+        if !check_spawn_bounds_by_navtiles(&navmesh, x, y) {
+            return;
+        }
+
+        commands.entity(factory_entity).insert((Placed, GameTile));
         commands.entity(factory_entity).remove::<AabbGizmo>();
         game_state.set(GameState::Main);
+
+        // mark navmesh tiles as occupied
+        for x in x as usize..x as usize + FACTORY_SIZE {
+            for y in y as usize..y as usize + FACTORY_SIZE {
+                navmesh.0[x][y].walkable = false;
+            }
+        }
     }
+}
+
+fn check_spawn_bounds_by_navtiles(navmesh: &navmesh::components::Navmesh, x: f32, y: f32) -> bool {
+    let mut is_valid = true;
+
+    // check navmesh bounds for non-walkable tiles assuming the factory is anchored in the bottom left
+    for x in x as usize..x as usize + FACTORY_SIZE {
+        for y in y as usize..y as usize + FACTORY_SIZE {
+            if !navmesh.0[x][y].walkable {
+                is_valid = false;
+            }
+        }
+    }
+
+    is_valid
 }

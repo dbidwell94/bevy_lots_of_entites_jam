@@ -1,6 +1,7 @@
 use super::StoneKind;
 use crate::{
     assets::{self, rocks::RockAsset},
+    utils::TranslationHelper,
     GameState, WorldNoise, PERLIN_DIVIDER, SIZE, TILE_SIZE,
 };
 use bevy::prelude::*;
@@ -75,6 +76,7 @@ pub fn spawn_stone_tiles(
     tan_rock: Res<assets::rocks::TanRock>,
     world_noise: Res<WorldNoise>,
     mut game_state: ResMut<NextState<GameState>>,
+    mut navmesh: ResMut<crate::navmesh::components::Navmesh>,
 ) {
     let mut perlin_location = Vec2::new(0., 0.);
 
@@ -86,6 +88,8 @@ pub fn spawn_stone_tiles(
             let offset_y = y + world_noise.offset as usize;
             perlin_location.x = offset_x as f32;
             perlin_location.y = offset_y as f32;
+
+            let mut nav_tile = &mut navmesh.0[x][y];
 
             let noise_value =
                 simplex_noise_2d_seeded(perlin_location / PERLIN_DIVIDER, world_noise.seed);
@@ -131,23 +135,29 @@ pub fn spawn_stone_tiles(
 
                 stone_kinds[x][y] = Some(stone_kind);
 
-                commands.spawn((
-                    SpriteBundle {
-                        sprite: Sprite {
-                            color: Color::WHITE,
-                            custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
+                let stone_entity = commands
+                    .spawn((
+                        SpriteBundle {
+                            sprite: Sprite {
+                                color: Color::WHITE,
+                                custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
+                                anchor: bevy::sprite::Anchor::BottomLeft,
+                                ..default()
+                            },
+                            texture: rock.get_large(),
+                            transform: Transform::from_translation(
+                                Vec2::new(x as f32, y as f32)
+                                    .tile_pos_to_world()
+                                    .extend(0.5),
+                            ),
                             ..default()
                         },
-                        texture: rock.get_large(),
-                        transform: Transform::from_xyz(
-                            x as f32 * TILE_SIZE,
-                            y as f32 * TILE_SIZE,
-                            0.5,
-                        ),
-                        ..default()
-                    },
-                    stone_kind,
-                ));
+                        stone_kind,
+                    ))
+                    .id();
+
+                nav_tile.walkable = false;
+                nav_tile.occupied_by.insert(stone_entity);
             }
         }
     }
