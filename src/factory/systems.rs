@@ -1,11 +1,7 @@
-use crate::{CursorPosition, TILE_SIZE};
+use super::components::*;
+use crate::{CursorPosition, GameState, TILE_SIZE};
 use bevy::prelude::*;
-
-#[derive(Component)]
-pub struct Placed;
-
-#[derive(Component)]
-pub struct Factory;
+use leafwing_input_manager::prelude::*;
 
 pub fn initial_spawn_factory(
     mut commands: Commands,
@@ -46,4 +42,25 @@ pub fn clamp_factory_to_cursor_position(
 
     factory_transform.translation.x = cursor_position.x * TILE_SIZE + (TILE_SIZE / 2.);
     factory_transform.translation.y = cursor_position.y * TILE_SIZE + (TILE_SIZE / 2.);
+}
+
+pub fn place_factory(
+    mut commands: Commands,
+    q_factory: Query<Entity, (With<Factory>, Without<Placed>)>,
+    input: Query<&ActionState<crate::Input>>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
+    let Ok(factory_entity) = q_factory.get_single() else {
+        return;
+    };
+
+    let Ok(input) = input.get_single() else {
+        return;
+    };
+
+    if input.just_pressed(crate::Input::Select) {
+        commands.entity(factory_entity).insert(Placed);
+        commands.entity(factory_entity).remove::<AabbGizmo>();
+        game_state.set(GameState::Main);
+    }
 }

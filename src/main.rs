@@ -7,15 +7,18 @@ mod pawn;
 mod stone;
 
 use assets::{DirtTile, GameAssets, GroundBase};
-use bevy::{prelude::*, window::PrimaryWindow, asset::AssetMetaCheck};
+use bevy::{asset::AssetMetaCheck, ecs::world, prelude::*, window::PrimaryWindow};
 use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 use bevy_easings::*;
 use leafwing_input_manager::{axislike::VirtualAxis, prelude::*};
 use noisy_bevy::simplex_noise_2d_seeded;
 use rand::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+const SIZE: usize = 128;
+#[cfg(not(target_arch = "wasm32"))]
 const SIZE: usize = 256;
-const DIRT_CUTOFF: f32 = -0.75;
+const DIRT_CUTOFF: f32 = -1.;
 const GRASS_CUTOFF: f32 = 0.0;
 const TILE_SIZE: f32 = 16.;
 const PERLIN_DIVIDER: f32 = 75.;
@@ -25,6 +28,7 @@ pub enum GameState {
     #[default]
     Loading,
     WorldSpawn,
+    FactoryPlacement,
     Main,
     Paused,
 }
@@ -33,6 +37,7 @@ pub enum GameState {
 pub enum Input {
     Pan,
     Zoom,
+    Select,
 }
 
 fn main() {
@@ -62,7 +67,12 @@ fn main() {
         .add_systems(Update, update_cursor_position)
         .add_systems(
             Update,
-            pan_and_zoom_camera.run_if(in_state(GameState::Main)),
+            (
+                camera_interactions.run_if(
+                    in_state(GameState::Main).or_else(in_state(GameState::FactoryPlacement)),
+                ),
+                selection_gizmo.after(camera_interactions),
+            ),
         )
         .init_resource::<WorldNoise>()
         .init_resource::<CursorPosition>()
@@ -70,9 +80,11 @@ fn main() {
 }
 
 #[derive(Component)]
-struct CameraSmoothTarget {
+struct CameraMetadata {
     pub target: Vec3,
     pub zoom: f32,
+    /// The world position of the mouse when the user started clicking and where the user is dragging to. None if the user is not dragging.
+    pub selection_world_bounds: Option<(Vec2, Vec2)>,
 }
 
 #[derive(Resource)]
@@ -102,7 +114,6 @@ struct GameTile;
 
 #[derive(Component)]
 enum TileType {
-    Water,
     Dirt,
     Grass,
 }
@@ -123,9 +134,10 @@ pub fn build_map(
     );
 
     commands.spawn((
-        CameraSmoothTarget {
+        CameraMetadata {
             target: camera_bundle.transform.translation,
             zoom: camera_bundle.projection.scale,
+            selection_world_bounds: None,
         },
         camera_bundle,
         InputManagerBundle::<Input> {
@@ -146,6 +158,7 @@ pub fn build_map(
                     },
                     Input::Zoom,
                 )
+                .insert(MouseButton::Left, Input::Select)
                 .build(),
             ..default()
         },
@@ -281,33 +294,6 @@ fn spawn_world_tiles(
         for y in 0..SIZE {
             let seed_value = &base_world[x][y];
 
-            if seed_value < &DIRT_CUTOFF {
-                // Water
-                commands.spawn((
-                    TileType::Water,
-                    SpriteBundle {
-                        sprite: Sprite {
-                            color: Color::Rgba {
-                                red: 0.253,
-                                green: 0.41,
-                                blue: 0.878,
-                                alpha: 1.,
-                            },
-                            custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
-                            ..default()
-                        },
-                        texture: asset_server.load("water.png"),
-                        transform: Transform::from_xyz(
-                            x as f32 * TILE_SIZE,
-                            y as f32 * TILE_SIZE,
-                            0.,
-                        ),
-                        ..default()
-                    },
-                    GameTile,
-                ));
-            }
-
             if seed_value >= &DIRT_CUTOFF && seed_value < &GRASS_CUTOFF {
                 // Dirt
                 commands.spawn((
@@ -323,10 +309,6 @@ fn spawn_world_tiles(
                         ..default()
                     },
                     GameTile,
-                    AabbGizmo {
-                        color: Some(Color::RED),
-                        ..default()
-                    },
                 ));
             }
             if seed_value >= &GRASS_CUTOFF {
@@ -353,20 +335,24 @@ fn spawn_world_tiles(
     }
 }
 
-fn pan_and_zoom_camera(
+fn camera_interactions(
     mut camera_query: Query<
         (
             &mut OrthographicProjection,
             &mut Transform,
-            &mut CameraSmoothTarget,
+            &mut CameraMetadata,
+            &Camera,
+            &GlobalTransform,
         ),
         With<Camera>,
     >,
+    q_window: Query<&Window, With<PrimaryWindow>>,
     input: Query<&ActionState<Input>>,
     time: Res<Time>,
 ) {
     let delta = time.delta_seconds();
-    let Ok((mut projection, mut transform, mut camera_target)) = camera_query.get_single_mut()
+    let Ok((mut projection, mut transform, mut camera_target, camera, global_camera_transform)) =
+        camera_query.get_single_mut()
     else {
         return;
     };
@@ -394,6 +380,33 @@ fn pan_and_zoom_camera(
         .lerp(camera_target.target, 10. * delta);
 
     projection.scale = projection.scale.lerp(&camera_target.zoom, &(10. * delta));
+
+    // Check if select is held to indicate a selection drag
+    if input.pressed(Input::Select) {
+        // get raw current mouse position
+        let Ok(window) = q_window.get_single() else {
+            return;
+        };
+        let Some(cursor_position) = window.cursor_position() else {
+            return;
+        };
+        let Some(world_pos) = camera
+            .viewport_to_world(global_camera_transform, cursor_position.clone())
+            .map(|ray| ray.origin.truncate())
+        else {
+            return;
+        };
+
+        if let Some(bounds) = &mut camera_target.selection_world_bounds {
+            // if we already have a selection, update the second point
+            bounds.1 = world_pos;
+        } else {
+            // if we don't have a selection, create one
+            camera_target.selection_world_bounds = Some((world_pos, world_pos));
+        }
+    } else {
+        camera_target.selection_world_bounds = None;
+    }
 }
 
 fn update_cursor_position(
@@ -423,4 +436,26 @@ fn update_cursor_position(
             ((v.y - TILE_SIZE / 2.) as i32 / TILE_SIZE as i32) as f32,
         )
     });
+}
+
+// Show a white box where the user is dragging to select
+fn selection_gizmo(mut gizmos: Gizmos, camera_metadata: Query<&CameraMetadata, With<Camera>>) {
+    let Ok(camera_metadata) = camera_metadata.get_single() else {
+        return;
+    };
+
+    if let Some(bounds) = &camera_metadata.selection_world_bounds {
+        let (start, end) = bounds;
+        let start = start.extend(0.);
+        let end = end.extend(0.);
+
+        let min = Vec3::new(start.x.min(end.x), start.y.min(end.y), 0.);
+        let max = Vec3::new(start.x.max(end.x), start.y.max(end.y), 0.);
+
+        let position = (min + max) / 2.0;
+        let size = max - min;
+        let color = Color::WHITE;
+
+        gizmos.rect_2d(position.truncate(), 0., size.truncate(), color);
+    }
 }

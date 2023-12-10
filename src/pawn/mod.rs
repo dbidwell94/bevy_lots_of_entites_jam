@@ -9,6 +9,6 @@ pub struct PawnPlugin;
 
 impl Plugin for PawnPlugin {
     fn build(&self, app: &mut App) {
-        // app.add_systems(OnEnter(GameState::WorldSpawn), systems::spawn_initial_pawns);
+        app.add_systems(OnEnter(GameState::Main), systems::initial_pawn_spawn);
     }
 }

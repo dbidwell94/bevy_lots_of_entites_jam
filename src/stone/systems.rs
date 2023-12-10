@@ -152,5 +152,5 @@ pub fn spawn_stone_tiles(
         }
     }
 
-    game_state.set(GameState::Main);
+    game_state.set(GameState::FactoryPlacement);
 }
