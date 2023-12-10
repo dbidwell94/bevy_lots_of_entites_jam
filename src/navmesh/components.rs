@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::hashbrown::HashSet};
+use bevy::{prelude::*, utils::HashSet};
 
 use crate::SIZE;
 
@@ -21,4 +21,11 @@ impl Default for Navmesh {
             std::array::from_fn(|_| NavTileOccupant::default())
         }))
     }
+}
+
+#[derive(Debug, Event)]
+pub struct PathfindRequest {
+    pub start: Vec2,
+    pub end: Vec2,
+    pub entity: Entity,
 }

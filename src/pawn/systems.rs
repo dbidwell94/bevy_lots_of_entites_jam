@@ -1,10 +1,15 @@
+use super::components::pawn_status::{Idle, Pathfinding, PawnStatus};
 use crate::factory::components::{Factory, Placed};
+use crate::navmesh::components::Navmesh;
+use crate::stone::StoneKind;
 use crate::TILE_SIZE;
 use crate::{
     assets::{CharacterFacing, MalePawns},
     pawn::components::*,
+    utils::*,
 };
 use bevy::prelude::*;
+use bevy::utils::HashSet;
 use rand::prelude::*;
 
 const INITIAL_PAWN_COUNT: usize = 10;
@@ -43,21 +48,77 @@ pub fn initial_pawn_spawn(
                 },
                 ..Default::default()
             },
-            pawn_status: PawnStatus::Idle,
+            pawn_status: pawn_status::PawnStatus(pawn_status::Idle),
             resources: CarriedResources(0),
         });
     }
 }
 
-pub fn update_pawns(
-    mut q_pawns: Query<(Entity, &mut PawnStatus, &GlobalTransform, &CarriedResources), With<Pawn>>,
+pub fn work_idle_pawns(
+    mut commands: Commands,
+    mut q_pawns: Query<
+        (
+            Entity,
+            &PawnStatus<Idle>,
+            &CarriedResources,
+            &mut Transform,
+        ),
+        With<Pawn>,
+    >,
+    q_stones: Query<Entity, With<StoneKind>>,
+    navmesh: Res<Navmesh>,
 ) {
-    for (pawn_entity, mut pawn_stauts, pawn_transform, resources) in &mut q_pawns {
-        match *pawn_stauts {
-            PawnStatus::Idle => {}
-            _ => {}
+    let navmesh = &navmesh.0;
+
+    fn check_for_stones(
+        entity_set: &HashSet<Entity>,
+        q_stones: &Query<Entity, With<StoneKind>>,
+    ) -> bool {
+        for entity in entity_set.iter() {
+            if q_stones.get(*entity).is_ok() {
+                return true;
+            }
         }
+        false
+    }
+
+    for (entity, _, _, mut transform) in &mut q_pawns {
+        commands
+            .entity(entity)
+            .remove::<PawnStatus<Idle>>()
+            .insert(PawnStatus(Pathfinding));
+
+        let grid_location = transform.translation.world_pos_to_tile();
+
+        let grid_x = grid_location.x as usize;
+        let grid_y = grid_location.y as usize;
+
+
+        // search the navmesh for non-walkable tiles, and see if the entities within are in q_stones
+        let mut stone_location = None;
+
+        let mut found_stone = false;
+        let mut search_radius: usize = 1;
+
+        'base: while !found_stone {
+            for x in (grid_x.saturating_sub(search_radius))..=(grid_x + search_radius) {
+                for y in (grid_y.saturating_sub(search_radius))..=(grid_y + search_radius) {
+                    if let Some(tile) = navmesh.get(x).and_then(|row| row.get(y)) {
+                        if !tile.walkable
+                            && check_for_stones(&tile.occupied_by, &q_stones)
+                            && !found_stone
+                        {
+                            found_stone = true;
+                            stone_location = Some(Vec2::new(x as f32, y as f32));
+                            break 'base;
+                        }
+                    }
+                }
+            }
+            if !found_stone {
+                search_radius += 1;
+            }
+        }
+        info!("Pawn found some resources at: {:?}", stone_location);
     }
 }
-
-pub fn pathfind_to_factory() {}
