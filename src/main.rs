@@ -5,6 +5,7 @@ mod assets;
 mod factory;
 mod pawn;
 mod stone;
+mod ui;
 
 use assets::{DirtTile, GameAssets, GroundBase};
 use bevy::{asset::AssetMetaCheck, ecs::world, prelude::*, window::PrimaryWindow};
@@ -62,7 +63,12 @@ fn main() {
             GameAssets,
         ))
         .add_plugins(InputManagerPlugin::<Input>::default())
-        .add_plugins((pawn::PawnPlugin, stone::StonePlugin, factory::FactoryPlugin))
+        .add_plugins((
+            pawn::PawnPlugin,
+            stone::StonePlugin,
+            factory::FactoryPlugin,
+            ui::UIPlugin,
+        ))
         .add_systems(OnEnter(GameState::WorldSpawn), build_map)
         .add_systems(Update, update_cursor_position)
         .add_systems(
