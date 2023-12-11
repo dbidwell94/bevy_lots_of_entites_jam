@@ -18,6 +18,7 @@ impl Plugin for FactoryStateUIPlugin {
 struct FactoryUI;
 
 fn create_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+
     let parent = root(
         root_full_screen(Some(JustifyContent::Start), Some(AlignItems::Center)),
         &asset_server,
@@ -26,7 +27,7 @@ fn create_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             text(
                 "Use left click to place your pawn factory. Pawns will spawn around the factory and proceed to collect resources from the nearest ore deposit.",
                 c_pixel_text,
-                text_style,
+                text_style(None),
                 p,
             );
         },

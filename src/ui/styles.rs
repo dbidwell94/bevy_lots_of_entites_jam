@@ -33,19 +33,55 @@ pub fn c_pixel_text(_: &AssetServer, tb: &mut TextBundle) {
     tb.background_color = BackgroundColor(Color::rgba(0., 0., 0., 0.85));
 }
 
-pub fn text_style(assets: &AssetServer, ts: &mut TextStyle) {
-    ts.font = assets.load("pixel.ttf");
-    ts.font_size = 40.0;
+pub fn text_style(
+    font_size: Option<f32>,
+) -> impl Fn(&bevy::prelude::AssetServer, &mut bevy::prelude::TextStyle) {
+    return move |assets: &AssetServer, ts: &mut TextStyle| {
+        ts.font = assets.load("pixel.ttf");
+        ts.font_size = font_size.unwrap_or(40.0);
+    };
 }
 
 pub fn top_right_anchor(node: &mut NodeBundle) {
     node.style = Style {
         display: Display::Flex,
-        top: Val::Px(0.0),
-        right: Val::Px(0.0),
-        width: Val::Px(200.0),
+        position_type: PositionType::Absolute,
+        top: Val::Percent(0.),
+        right: Val::Percent(0.),
+        width: Val::Auto,
         height: Val::Auto,
         ..default()
     };
-    node.background_color = BackgroundColor(Color::rgba(0., 0., 0., 0.85));
+}
+
+pub fn bottom_center_anchor(node: &mut NodeBundle) {
+    top_right_anchor(node);
+    node.style.position_type = PositionType::Absolute;
+    node.style.top = Val::Auto;
+    node.style.bottom = Val::Percent(0.);
+    node.style.right = Val::Auto;
+    node.style.left = Val::Auto;
+    node.style.margin = UiRect::all(Val::Px(5.0));
+
+    node.style.justify_self = JustifySelf::End;
+}
+
+pub fn spawn_menu_button(
+    image_location: Option<&'static str>,
+) -> impl Fn(&AssetServer, &mut ButtonBundle) {
+    return move |assets: &AssetServer, b: &mut ButtonBundle| {
+        b.image = UiImage {
+            texture: assets.load(image_location.unwrap_or_default()),
+            ..default()
+        };
+        b.style = Style {
+            width: Val::Px(50.0),
+            height: Val::Px(50.0),
+            display: Display::Flex,
+            padding: UiRect::all(Val::Px(10.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            ..default()
+        };
+        b.border_color = BorderColor(Color::WHITE);
+    };
 }

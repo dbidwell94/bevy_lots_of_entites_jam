@@ -12,6 +12,7 @@ impl Plugin for PawnPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Main), systems::initial_pawn_spawn)
             .init_resource::<WorkQueue>()
+            .add_event::<SpawnPawnRequestEvent>()
             .add_systems(
                 Update,
                 (
@@ -33,3 +34,6 @@ impl Plugin for PawnPlugin {
 pub struct WorkQueue {
     pub build_queue: VecDeque<WorkOrder<BuildItem>>,
 }
+
+#[derive(Event, Debug)]
+pub struct SpawnPawnRequestEvent;

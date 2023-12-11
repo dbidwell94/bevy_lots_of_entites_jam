@@ -16,8 +16,66 @@ use std::collections::VecDeque;
 
 const INITIAL_PAWN_COUNT: usize = 10;
 const MOVE_SPEED: f32 = 60.;
-const MAX_RESOURCES: usize = 50;
-const RESOURCE_GAIN_RATE: usize = 5;
+const MAX_RESOURCES: usize = 15;
+const RESOURCE_GAIN_RATE: usize = 1;
+
+fn spawn_pawn_in_random_location(commands: &mut Commands, pawn_res: &Res<MalePawns>, game_resources: &mut ResMut<GameResources>, factory_transform: &Transform) {
+    let radius = TILE_SIZE * 5.;
+    let mut rng = rand::thread_rng();
+
+    let pawn = pawn_res.get_random();
+
+    // spawn pawns in a random circle 1 tile around the factory
+    let random_angle: f32 = rng.gen_range(0.0..360.0);
+    let x = factory_transform.translation.x + random_angle.cos() * radius;
+    let y = factory_transform.translation.y + random_angle.sin() * radius;
+
+    let pawn_entity = commands
+        .spawn(PawnBundle {
+            pawn: Pawn {
+                move_path: VecDeque::new(),
+                move_to: None,
+                health: 100,
+                max_health: 100,
+                animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
+                mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
+                moving: false,
+            },
+            character_facing: CharacterFacing::Left,
+            name: Name::new("Pawn"),
+            sprite_bundle: SpriteSheetBundle {
+                texture_atlas: pawn,
+                transform: Transform::from_translation(Vec3::new(x, y, 1.)),
+                sprite: TextureAtlasSprite {
+                    anchor: bevy::sprite::Anchor::BottomLeft,
+                    index: CharacterFacing::Left as usize,
+                    ..default()
+                },
+                ..Default::default()
+            },
+            pawn_status: PawnStatus(Idle),
+            resources: CarriedResources(0),
+        })
+        .id();
+
+    commands
+        .spawn(HealthBundle {
+            health_bar: HealthBar,
+            health_bundle: SpriteBundle {
+                transform: Transform::from_xyz(16. / 2., 20., 1.),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::new(16., 2.)),
+                    color: Color::NONE,
+                    ..default()
+                },
+                ..default()
+            },
+        })
+        .set_parent(pawn_entity);
+
+    game_resources.pawns += 1;
+
+}
 
 pub fn initial_pawn_spawn(
     mut commands: Commands,
@@ -118,7 +176,6 @@ pub fn work_idle_pawns(
     }
 
     for (entity, transform) in &mut q_pawns {
-        info!("Entity {:?} is idle. Putting that pawn to work.", entity);
         commands
             .entity(entity)
             .clear_status()
@@ -184,8 +241,7 @@ pub fn listen_for_pathfinding_answers(
                 .entity(evt.entity)
                 .clear_status()
                 .clear_work_order()
-                .insert(PawnStatus(Idle))
-                .log_components();
+                .insert(PawnStatus(Idle));
         }
     }
 }

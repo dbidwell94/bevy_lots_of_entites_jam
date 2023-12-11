@@ -154,7 +154,7 @@ pub fn spawn_stone_tiles(
                         },
                         stone_kind,
                         Stone {
-                            remaining_resources: 1000,
+                            remaining_resources: 150,
                         },
                     ))
                     .id();
