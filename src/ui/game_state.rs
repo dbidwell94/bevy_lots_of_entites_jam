@@ -104,7 +104,7 @@ fn update_resource_counter(
 }
 
 fn listen_for_spawn_pawn(
-    pawn_spawn_button: Query<&Interaction, With<PawnSpawnButton>>,
+    pawn_spawn_button: Query<&Interaction, (With<PawnSpawnButton>, Changed<Interaction>)>,
     mut events: EventWriter<SpawnPawnRequestEvent>,
 ) {
     for interaction in pawn_spawn_button.iter() {

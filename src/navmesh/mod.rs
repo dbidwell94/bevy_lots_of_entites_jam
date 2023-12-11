@@ -3,6 +3,7 @@ mod systems;
 
 use self::components::{Navmesh, PathfindAnswer, PathfindRequest, ToggleNavmeshDebug};
 use bevy::prelude::*;
+pub use systems::get_pathing;
 
 pub struct NavmeshPlugin;
 

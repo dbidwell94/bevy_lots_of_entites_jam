@@ -48,6 +48,7 @@ pub mod pawn_status {
         fn clear_status(&mut self) -> &mut Self {
             self.remove::<PawnStatus<Idle>>()
                 .remove::<PawnStatus<Pathfinding>>()
+                .remove::<PawnStatus<PathfindingError>>()
                 .remove::<PawnStatus<Moving>>()
                 .remove::<PawnStatus<Mining>>();
 
@@ -67,6 +68,10 @@ pub mod pawn_status {
     #[derive(Component)]
     pub struct Pathfinding;
     impl Status for Pathfinding {}
+
+    #[derive(Component)]
+    pub struct PathfindingError;
+    impl Status for PathfindingError {}
 
     #[derive(Component)]
     pub struct Moving;

@@ -25,6 +25,8 @@ impl Plugin for PawnPlugin {
                     systems::work_idle_pawns
                         .after(systems::return_to_factory)
                         .after(systems::mine_stone),
+                    systems::listen_for_spawn_pawn_event.run_if(in_state(GameState::Main)),
+                    systems::debug_pathfinding_error
                 ),
             );
     }
