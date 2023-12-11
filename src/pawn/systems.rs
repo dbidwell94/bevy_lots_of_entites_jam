@@ -782,7 +782,8 @@ pub fn update_pathfinding_to_pawn(
             let grid_location = transform.translation().world_pos_to_tile();
             let other_grid_location = other_transform.translation().world_pos_to_tile();
 
-            if (other_grid_location - grid_location).length() < 1.2 {
+            if (other_grid_location - grid_location).length() <= 2.5 {
+                info!("Pawn reached enemy, attacking");
                 commands
                     .entity(entity)
                     .clear_status()
@@ -842,6 +843,7 @@ pub fn attack_pawn(
     }
 
     let mut queued_attacks: Vec<AttackMetadata> = Vec::new();
+    let mut destroyed_pawns = HashSet::<Entity>::default();
 
     for (entity, WorkOrder(work_order::AttackPawn(other_entity)), pawn) in &q_all_attacking_pawns {
         if q_all_attacking_enemies
@@ -901,6 +903,13 @@ pub fn attack_pawn(
         attacking_enemy,
     } in queued_attacks
     {
+        // don't perform logic if the pawn has already been counted as destoyed. It shouldn't be able to attack if it's dead
+        // likewise, don't perform logic if the attacking pawn has already been counted as destroyed. It'll be caught in the next
+        // frame and they should be set back to idle
+        if destroyed_pawns.contains(&entity) || destroyed_pawns.contains(&attacking_entity) {
+            continue;
+        }
+
         let Some((_, _, mut pawn)) = q_all_attacking_pawns
             .get_mut(attacking_entity)
             .ok()
@@ -915,6 +924,7 @@ pub fn attack_pawn(
         };
 
         pawn.health = pawn.health.saturating_sub(attack_for);
+
         if pawn.health == 0 {
             commands.entity(attacking_entity).despawn_recursive();
 
@@ -927,6 +937,8 @@ pub fn attack_pawn(
                 .clear_status()
                 .clear_work_order()
                 .insert(PawnStatus(pawn_status::Idle));
+
+            destroyed_pawns.insert(attacking_entity);
         }
     }
 }
