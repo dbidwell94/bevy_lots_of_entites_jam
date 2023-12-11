@@ -15,6 +15,7 @@ use std::collections::VecDeque;
 
 const INITIAL_PAWN_COUNT: usize = 10;
 const MOVE_SPEED: f32 = 45.;
+const MAX_RESOURCES: usize = 50;
 
 pub fn initial_pawn_spawn(
     mut commands: Commands,
@@ -36,26 +37,47 @@ pub fn initial_pawn_spawn(
         let x = factory_transform.translation().x + random_angle.cos() * radius;
         let y = factory_transform.translation().y + random_angle.sin() * radius;
 
-        commands.spawn(PawnBundle {
-            pawn: Pawn {
-                move_path: VecDeque::new(),
-                move_to: None,
-            },
-            character_facing: CharacterFacing::Left,
-            name: Name::new("Pawn"),
-            sprite_bundle: SpriteSheetBundle {
-                texture_atlas: pawn,
-                transform: Transform::from_translation(Vec3::new(x, y, 1.)),
-                sprite: TextureAtlasSprite {
-                    anchor: bevy::sprite::Anchor::BottomLeft,
-                    index: CharacterFacing::Left as usize,
+        let pawn_entity = commands
+            .spawn(PawnBundle {
+                pawn: Pawn {
+                    move_path: VecDeque::new(),
+                    move_to: None,
+                    health: 100,
+                    max_health: 100,
+                    animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
+                    moving: false,
+                },
+                character_facing: CharacterFacing::Left,
+                name: Name::new("Pawn"),
+                sprite_bundle: SpriteSheetBundle {
+                    texture_atlas: pawn,
+                    transform: Transform::from_translation(Vec3::new(x, y, 1.)),
+                    sprite: TextureAtlasSprite {
+                        anchor: bevy::sprite::Anchor::BottomLeft,
+                        index: CharacterFacing::Left as usize,
+                        ..default()
+                    },
+                    ..Default::default()
+                },
+                pawn_status: pawn_status::PawnStatus(pawn_status::Idle),
+                resources: CarriedResources(0),
+            })
+            .id();
+
+        commands
+            .spawn(HealthBundle {
+                health_bar: HealthBar,
+                health_bundle: SpriteBundle {
+                    transform: Transform::from_xyz(16. / 2., 20., 1.),
+                    sprite: Sprite {
+                        custom_size: Some(Vec2::new(16., 2.)),
+                        color: Color::NONE,
+                        ..default()
+                    },
                     ..default()
                 },
-                ..Default::default()
-            },
-            pawn_status: pawn_status::PawnStatus(pawn_status::Idle),
-            resources: CarriedResources(0),
-        });
+            })
+            .set_parent(pawn_entity);
     }
 }
 
@@ -141,8 +163,11 @@ pub fn listen_for_pathfinding_answers(
     }
 }
 
-pub fn move_pawn(mut q_pawn: Query<(&mut Transform, &mut Pawn)>, time: Res<Time>) {
-    for (mut transform, mut pawn) in &mut q_pawn {
+pub fn move_pawn(
+    mut q_pawn: Query<(&mut Transform, &mut Pawn, &mut CharacterFacing)>,
+    time: Res<Time>,
+) {
+    for (mut transform, mut pawn, mut facing) in &mut q_pawn {
         let current_grid = transform.translation.world_pos_to_tile();
 
         if pawn.move_to.is_none() {
@@ -150,15 +175,94 @@ pub fn move_pawn(mut q_pawn: Query<(&mut Transform, &mut Pawn)>, time: Res<Time>
         }
 
         let Some(path) = pawn.move_to else {
+            pawn.moving = false;
             continue;
         };
-
-        if (path - current_grid).length() < 1.1 {
-            pawn.move_to = pawn.move_path.pop_front();
-        }
 
         let direction = (path - current_grid).normalize_or_zero();
 
         transform.translation += direction.extend(0.) * MOVE_SPEED * time.delta_seconds();
+        pawn.moving = true;
+        // update facing direction depending on direction (right, left, forward, backwards)
+
+        if direction.length() > 0. {
+            if direction.x.abs() > direction.y.abs() {
+                if direction.x > 0. {
+                    *facing = CharacterFacing::Right;
+                } else {
+                    *facing = CharacterFacing::Left;
+                }
+            } else {
+                if direction.y > 0. {
+                    *facing = CharacterFacing::Backward;
+                } else {
+                    *facing = CharacterFacing::Forward;
+                }
+            }
+        }
+        if (path - current_grid).length() < 0.2 {
+            pawn.move_to = pawn.move_path.pop_front();
+        }
+    }
+}
+
+pub fn update_pawn_animation(
+    mut q_pawn: Query<(&mut TextureAtlasSprite, &mut Pawn, &CharacterFacing), With<Pawn>>,
+    time: Res<Time>,
+) {
+    for (mut sprite, mut pawn, facing) in &mut q_pawn {
+        if !pawn.moving {
+            sprite.index = *facing as usize;
+            continue;
+        } else {
+            pawn.animation_timer.tick(time.delta());
+        }
+
+        if pawn.animation_timer.finished() {
+            // // step forward 4 cells in the texture atlas to reach the next step in the animation
+            // sprite.index += 4;
+
+            let final_animation_frame = 15 - *facing as usize;
+
+            if sprite.index + 4 > final_animation_frame {
+                sprite.index = *facing as usize;
+            } else {
+                sprite.index += 4;
+            }
+        }
+    }
+}
+
+pub fn update_health_ui(
+    q_pawns: Query<&Pawn>,
+    mut q_health_bar: Query<(&Parent, &mut Sprite), With<HealthBar>>,
+) {
+    let GREEN_HEALTH_THRESHOLD: usize = 75;
+    let YELLOW_HEALTH_THRESHOLD: usize = 50;
+    let RED_HEALTH_THRESHOLD: usize = 25;
+
+    for (parent, mut sprite) in &mut q_health_bar {
+        let pawn_entity = parent.get();
+
+        let Ok(pawn) = q_pawns.get(pawn_entity) else {
+            continue;
+        };
+
+        sprite.custom_size = Some(Vec2::new(
+            pawn.health as f32 / pawn.max_health as f32 * 16.,
+            2.,
+        ));
+
+        if pawn.health == pawn.max_health {
+            sprite.color = Color::NONE;
+        } else if pawn.health > GREEN_HEALTH_THRESHOLD {
+            sprite.color = Color::GREEN;
+        } else if pawn.health > YELLOW_HEALTH_THRESHOLD {
+            sprite.color = Color::YELLOW;
+        } else if pawn.health > RED_HEALTH_THRESHOLD {
+            sprite.color = Color::RED;
+        } else {
+            sprite.color = Color::rgb(0.5, 0., 0.);
+        }
     }
 }

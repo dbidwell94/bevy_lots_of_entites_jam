@@ -7,6 +7,19 @@ use bevy::prelude::*;
 pub struct Pawn {
     pub move_path: VecDeque<Vec2>,
     pub move_to: Option<Vec2>,
+    pub health: usize,
+    pub max_health: usize,
+    pub animation_timer: Timer,
+    pub moving: bool,
+}
+
+#[derive(Component)]
+pub struct HealthBar;
+
+#[derive(Bundle)]
+pub struct HealthBundle {
+    pub health_bundle: SpriteBundle,
+    pub health_bar: HealthBar,
 }
 
 #[derive(Bundle)]

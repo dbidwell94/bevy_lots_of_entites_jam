@@ -8,3 +8,8 @@ pub enum StoneKind {
     StoneRock,
     TanRock,
 }
+
+#[derive(Component, Debug)]
+pub struct Stone {
+    pub remaining_resources: usize
+}

@@ -1,4 +1,4 @@
-use super::StoneKind;
+use super::{Stone, StoneKind};
 use crate::{
     assets::{self, rocks::RockAsset},
     utils::TranslationHelper,
@@ -89,7 +89,7 @@ pub fn spawn_stone_tiles(
             perlin_location.x = offset_x as f32;
             perlin_location.y = offset_y as f32;
 
-            let mut nav_tile = &mut navmesh.0[x][y];
+            let nav_tile = &mut navmesh.0[x][y];
 
             let noise_value =
                 simplex_noise_2d_seeded(perlin_location / PERLIN_DIVIDER, world_noise.seed);
@@ -153,6 +153,9 @@ pub fn spawn_stone_tiles(
                             ..default()
                         },
                         stone_kind,
+                        Stone {
+                            remaining_resources: 100,
+                        },
                     ))
                     .id();
 

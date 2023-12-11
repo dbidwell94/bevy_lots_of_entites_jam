@@ -282,40 +282,40 @@ pub enum DirtTile {
 
 #[derive(AssetCollection, Resource)]
 pub struct MalePawns {
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_01.png")]
     pub male1: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_02.png")]
     pub male2: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_03.png")]
     pub male3: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_04.png")]
     pub male4: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_05.png")]
     pub male5: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_06.png")]
     pub male6: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_07.png")]
     pub male7: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_08.png")]
     pub male8: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_09.png")]
     pub male9: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_10.png")]
     pub male10: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_11.png")]
     pub male11: Handle<TextureAtlas>,
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 3))]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 4, rows = 4))]
     #[asset(path = "objects/pawns/male/M_12.png")]
     pub male12: Handle<TextureAtlas>,
 }
