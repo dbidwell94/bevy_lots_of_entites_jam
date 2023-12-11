@@ -54,7 +54,8 @@ pub mod pawn_status {
                 .remove::<PawnStatus<Pathfinding>>()
                 .remove::<PawnStatus<PathfindingError>>()
                 .remove::<PawnStatus<Moving>>()
-                .remove::<PawnStatus<Mining>>();
+                .remove::<PawnStatus<Mining>>()
+                .remove::<PawnStatus<Attacking>>();
 
             self
         }
@@ -84,6 +85,10 @@ pub mod pawn_status {
     #[derive(Component)]
     pub struct Mining;
     impl Status for Mining {}
+
+    #[derive(Component)]
+    pub struct Attacking;
+    impl Status for Attacking {}
 }
 
 pub mod work_order {
@@ -96,7 +101,9 @@ pub mod work_order {
     impl ClearWorkOrder for EntityCommands<'_, '_, '_> {
         fn clear_work_order(&mut self) -> &mut Self {
             self.remove::<WorkOrder<MineStone>>()
-                .remove::<WorkOrder<ReturnToFactory>>();
+                .remove::<WorkOrder<ReturnToFactory>>()
+                .remove::<WorkOrder<BuildItem>>()
+                .remove::<WorkOrder<AttackPawn>>();
 
             self
         }

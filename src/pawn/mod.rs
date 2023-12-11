@@ -34,10 +34,12 @@ impl Plugin for PawnPlugin {
                 Update,
                 (
                     systems::spawn_enemy_pawns,
-                    systems::enemy_search_for_factory,
-                    systems::enemy_search_for_pawns,
-                    systems::update_pathfinding_to_pawn,
-                    systems::pawn_search_for_enemies,
+                    systems::enemy_search_for_factory.after(systems::spawn_enemy_pawns),
+                    systems::enemy_search_for_pawns.after(systems::enemy_search_for_factory),
+                    systems::update_pathfinding_to_pawn.after(systems::enemy_search_for_pawns),
+                    systems::pawn_search_for_enemies.after(systems::update_pathfinding_to_pawn),
+                    systems::attack_pawn.after(systems::pawn_search_for_enemies),
+                    // systems::check_target_still_exists.after(systems::attack_pawn),
                 )
                     .run_if(in_state(GameState::Main)),
             );
@@ -63,8 +65,8 @@ impl Default for EnemyWave {
     fn default() -> Self {
         Self {
             wave: 0,
-            enemy_count_multiplier: 2,
-            enemy_spawn_timer: Timer::from_seconds(15.0, TimerMode::Repeating),
+            enemy_count_multiplier: 1,
+            enemy_spawn_timer: Timer::from_seconds(30.0, TimerMode::Repeating),
         }
     }
 }

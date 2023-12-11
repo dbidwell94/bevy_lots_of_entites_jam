@@ -16,12 +16,14 @@ use bevy::utils::HashSet;
 use rand::prelude::*;
 use std::collections::VecDeque;
 
-const INITIAL_PAWN_COUNT: usize = 10;
+const INITIAL_PAWN_COUNT: usize = 30;
 const MOVE_SPEED: f32 = 60.;
 const MAX_RESOURCES: usize = 15;
 const RESOURCE_GAIN_RATE: usize = 1;
 const PAWN_COST: usize = 100;
+const PAWN_ATTACK_STRENGTH: usize = 5;
 const ENEMY_TILE_RANGE: usize = 10;
+const ENEMY_ATTACK_STRENGTH: usize = 10;
 
 fn spawn_pawn_in_random_location(
     commands: &mut Commands,
@@ -50,7 +52,7 @@ fn spawn_pawn_in_random_location(
                 animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                 mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                 moving: false,
-                search_timer: Timer::from_seconds(2.5, TimerMode::Repeating),
+                search_timer: Timer::from_seconds(0.25, TimerMode::Repeating),
             },
             character_facing: CharacterFacing::Left,
             name: Name::new("Pawn"),
@@ -118,6 +120,7 @@ pub fn work_idle_pawns(
             Without<WorkOrder<work_order::ReturnToFactory>>,
             Without<WorkOrder<work_order::MineStone>>,
             Without<PawnStatus<pawn_status::Moving>>,
+            Without<WorkOrder<work_order::AttackPawn>>,
             With<PawnStatus<Idle>>,
             Without<Enemy>,
         ),
@@ -141,6 +144,8 @@ pub fn work_idle_pawns(
     }
 
     for (entity, transform) in &mut q_pawns {
+        info!("Working idle pawn");
+
         commands
             .entity(entity)
             .clear_status()
@@ -513,31 +518,33 @@ pub fn debug_pathfinding_error(
 pub fn pawn_search_for_enemies(
     mut commands: Commands,
     mut q_pawns: Query<
-        (Entity, &mut Pawn, &GlobalTransform),
-        (Without<WorkOrder<work_order::AttackPawn>>, Without<Enemy>),
+        (Entity, &GlobalTransform),
+        (
+            Without<WorkOrder<work_order::AttackPawn>>,
+            Without<Enemy>,
+            With<Pawn>,
+        ),
     >,
     q_enemies: Query<(Entity, &GlobalTransform), (With<Enemy>, With<Pawn>)>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
-    for (pawn_entity, mut pawn, pawn_transform) in &mut q_pawns {
-        let pawn_grid_pos = pawn_transform.translation().world_pos_to_tile();
+    for (pawn_entity, pawn_transform) in &mut q_pawns {
+        let pawn_pos = pawn_transform.translation().world_pos_to_tile();
 
         let mut closest: Option<(Vec2, Entity)> = None;
 
         for (enemy_entity, enemy_transform) in &q_enemies {
             // check if the pawn is within range of the enemy
-            let enemy_tile_pos = enemy_transform.translation().world_pos_to_tile();
+            let enemy_pos = enemy_transform.translation().world_pos_to_tile();
 
-            if (enemy_tile_pos - pawn_grid_pos).length() < ENEMY_TILE_RANGE as f32 {
+            if (enemy_pos - pawn_pos).length() < ENEMY_TILE_RANGE as f32 {
                 // check if the pawn is closer than the current closest pawn
                 if let Some((closest_pos, _)) = closest {
-                    if (enemy_tile_pos - pawn_grid_pos).length()
-                        < (closest_pos - pawn_grid_pos).length()
-                    {
-                        closest = Some((enemy_tile_pos, enemy_entity));
+                    if (enemy_pos - pawn_pos).length() < (closest_pos - pawn_pos).length() {
+                        closest = Some((enemy_pos, enemy_entity));
                     }
                 } else {
-                    closest = Some((enemy_tile_pos, enemy_entity));
+                    closest = Some((enemy_pos, enemy_entity));
                 }
             }
         }
@@ -553,11 +560,24 @@ pub fn pawn_search_for_enemies(
             pathfinding_event_writer.send(PathfindRequest {
                 end: closest_pos,
                 entity: pawn_entity,
-                start: pawn_grid_pos,
+                start: pawn_pos,
             });
         }
     }
 }
+
+// pub fn check_target_still_exists(
+//     mut commands: Commands,
+//     q_attacking_pawn_query: Query<(Entity, &WorkOrder<work_order::AttackPawn>)>,
+//     q_pawns: Query<Entity, With<Pawn>>,
+// ) {
+//     for (entity, WorkOrder(work_order::AttackPawn(target_entity))) in &q_attacking_pawn_query {
+//         if q_pawns.get(*target_entity).is_err() {
+//             commands.entity(entity).clear_status().clear_work_order();
+//             info!("Target {:?} no longer exists", target_entity);
+//         }
+//     }
+// }
 
 pub fn spawn_enemy_pawns(
     mut commands: Commands,
@@ -568,96 +588,97 @@ pub fn spawn_enemy_pawns(
 ) {
     enemy_wave.enemy_spawn_timer.tick(time.delta());
 
-    if !enemy_wave.enemy_spawn_timer.finished() {
+    if !enemy_wave.enemy_spawn_timer.just_finished() {
         return;
     }
     enemy_wave.wave += 1;
 
-    // get a random boolean true or false
-    let mut rng = rand::thread_rng();
-    let spawn_x = rng.gen_bool(0.5);
+    for _ in 0..enemy_wave.wave * enemy_wave.enemy_count_multiplier {
+        // get a random boolean true or false
+        let mut rng = rand::thread_rng();
+        let spawn_x = rng.gen_bool(0.5);
 
-    let spawn_location: Vec2;
+        let spawn_location: Vec2;
 
-    loop {
-        let temp_location: (usize, usize) = if spawn_x {
-            // randomly choose between 0 or SIZE (left or right)
-            let x: usize = if rng.gen_bool(0.5) { SIZE } else { 0 };
-            let y = rng.gen_range(0..SIZE - 1);
+        loop {
+            let temp_location: (usize, usize) = if spawn_x {
+                // randomly choose between 0 or SIZE (left or right)
+                let x: usize = if rng.gen_bool(0.5) { SIZE } else { 0 };
+                let y = rng.gen_range(0..SIZE - 1);
 
-            (x, y)
-        } else {
-            let x = rng.gen_range(0..SIZE - 1);
-            let y: usize = if rng.gen_bool(0.5) { SIZE } else { 0 };
-            (x, y)
-        };
+                (x, y)
+            } else {
+                let x = rng.gen_range(0..SIZE - 1);
+                let y: usize = if rng.gen_bool(0.5) { SIZE } else { 0 };
+                (x, y)
+            };
 
-        // check navtile to ensure it's walkable
-        if let Some(NavTileOccupant { walkable, .. }) = navmesh
-            .0
-            .get(temp_location.0)
-            .and_then(|o| o.get(temp_location.1))
-        {
-            if *walkable {
-                spawn_location = Vec2::new(temp_location.0 as f32, temp_location.1 as f32);
-                break;
+            // check navtile to ensure it's walkable
+            if let Some(NavTileOccupant { walkable, .. }) = navmesh
+                .0
+                .get(temp_location.0)
+                .and_then(|o| o.get(temp_location.1))
+            {
+                if *walkable {
+                    spawn_location = Vec2::new(temp_location.0 as f32, temp_location.1 as f32);
+                    break;
+                }
             }
         }
+
+        // convert spawn_location to world coordinates
+        let spawn_location = spawn_location.tile_pos_to_world();
+        // spawn enemy pawn
+        let pawn_entity = commands
+            .spawn(PawnBundle {
+                pawn: Pawn {
+                    move_path: VecDeque::new(),
+                    move_to: None,
+                    health: 100,
+                    max_health: 100,
+                    search_timer: Timer::from_seconds(0.25, TimerMode::Repeating),
+                    animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
+                    mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
+                    moving: false,
+                },
+                character_facing: CharacterFacing::Left,
+                name: Name::new("Enemy"),
+                sprite_bundle: SpriteSheetBundle {
+                    texture_atlas: pawn_res.get_random(),
+                    transform: Transform::from_translation(Vec3::new(
+                        spawn_location.x,
+                        spawn_location.y,
+                        1.,
+                    )),
+                    sprite: TextureAtlasSprite {
+                        anchor: bevy::sprite::Anchor::BottomLeft,
+                        index: CharacterFacing::Left as usize,
+                        color: Color::RED,
+                        ..default()
+                    },
+                    ..Default::default()
+                },
+                pawn_status: PawnStatus(Idle),
+                resources: CarriedResources(0),
+            })
+            .insert(Enemy)
+            .id();
+
+        commands
+            .spawn(HealthBundle {
+                health_bar: HealthBar,
+                health_bundle: SpriteBundle {
+                    transform: Transform::from_xyz(16. / 2., 20., 1.),
+                    sprite: Sprite {
+                        custom_size: Some(Vec2::new(16., 2.)),
+                        color: Color::NONE,
+                        ..default()
+                    },
+                    ..default()
+                },
+            })
+            .set_parent(pawn_entity);
     }
-
-    // convert spawn_location to world coordinates
-    let spawn_location = spawn_location.tile_pos_to_world();
-
-    // spawn enemy pawn
-    let pawn_entity = commands
-        .spawn(PawnBundle {
-            pawn: Pawn {
-                move_path: VecDeque::new(),
-                move_to: None,
-                health: 100,
-                max_health: 100,
-                search_timer: Timer::from_seconds(2.5, TimerMode::Repeating),
-                animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
-                mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
-                moving: false,
-            },
-            character_facing: CharacterFacing::Left,
-            name: Name::new("Enemy"),
-            sprite_bundle: SpriteSheetBundle {
-                texture_atlas: pawn_res.get_random(),
-                transform: Transform::from_translation(Vec3::new(
-                    spawn_location.x,
-                    spawn_location.y,
-                    1.,
-                )),
-                sprite: TextureAtlasSprite {
-                    anchor: bevy::sprite::Anchor::BottomLeft,
-                    index: CharacterFacing::Left as usize,
-                    color: Color::RED,
-                    ..default()
-                },
-                ..Default::default()
-            },
-            pawn_status: PawnStatus(Idle),
-            resources: CarriedResources(0),
-        })
-        .insert(Enemy)
-        .id();
-
-    commands
-        .spawn(HealthBundle {
-            health_bar: HealthBar,
-            health_bundle: SpriteBundle {
-                transform: Transform::from_xyz(16. / 2., 20., 1.),
-                sprite: Sprite {
-                    custom_size: Some(Vec2::new(16., 2.)),
-                    color: Color::NONE,
-                    ..default()
-                },
-                ..default()
-            },
-        })
-        .set_parent(pawn_entity);
 }
 
 pub fn enemy_search_for_factory(
@@ -751,6 +772,184 @@ pub fn enemy_search_for_pawns(
     }
 }
 
-pub fn update_pathfinding_to_pawn(mut commands: Commands) {
-    
+pub fn update_pathfinding_to_pawn(
+    mut commands: Commands,
+    mut q_all_attacking_pawns: Query<
+        (
+            Entity,
+            &WorkOrder<work_order::AttackPawn>,
+            &GlobalTransform,
+            &mut Pawn,
+        ),
+        (With<Pawn>, With<WorkOrder<work_order::AttackPawn>>),
+    >,
+    time: Res<Time>,
+    mut pathfinding_event_writer: EventWriter<PathfindRequest>,
+) {
+    for (_, _, _, mut pawn) in &mut q_all_attacking_pawns {
+        pawn.search_timer.tick(time.delta());
+    }
+
+    for (entity, WorkOrder(work_order::AttackPawn(other_entity)), transform, pawn) in
+        &q_all_attacking_pawns
+    {
+        if let Ok((_, _, other_transform, _)) = q_all_attacking_pawns.get(*other_entity) {
+            let grid_location = transform.translation().world_pos_to_tile();
+            let other_grid_location = other_transform.translation().world_pos_to_tile();
+
+            if (other_grid_location - grid_location).length() < 1.2 {
+                commands
+                    .entity(entity)
+                    .clear_status()
+                    .insert(PawnStatus(pawn_status::Attacking));
+                continue;
+            }
+
+            if !pawn.search_timer.finished() {
+                continue;
+            }
+
+            commands
+                .entity(entity)
+                .clear_status()
+                .insert(PawnStatus(pawn_status::Pathfinding));
+
+            pathfinding_event_writer.send(PathfindRequest {
+                start: grid_location,
+                end: other_grid_location,
+                entity,
+            });
+        } else {
+            commands
+                .entity(entity)
+                .clear_status()
+                .clear_work_order()
+                .insert(PawnStatus(pawn_status::Idle));
+        }
+    }
+}
+
+pub fn attack_pawn(
+    mut commands: Commands,
+    mut q_all_attacking_pawns: Query<
+        (Entity, &WorkOrder<work_order::AttackPawn>, &mut Pawn),
+        (
+            With<Pawn>,
+            With<PawnStatus<pawn_status::Attacking>>,
+            Without<Enemy>,
+        ),
+    >,
+    mut q_all_attacking_enemies: Query<
+        (Entity, &WorkOrder<work_order::AttackPawn>, &mut Pawn),
+        (
+            With<Pawn>,
+            With<PawnStatus<pawn_status::Attacking>>,
+            With<Enemy>,
+        ),
+    >,
+    time: Res<Time>,
+    mut game_resources: ResMut<GameResources>,
+) {
+    struct AttackMetadata {
+        entity: Entity,
+        attacking_entity: Entity,
+        attack_for: usize,
+        attacking_enemy: bool,
+    }
+
+    let mut queued_attacks: Vec<AttackMetadata> = Vec::new();
+
+    for (_, _, mut pawn) in &mut q_all_attacking_pawns {
+        pawn.search_timer.tick(time.delta());
+    }
+    for (_, _, mut pawn) in &mut q_all_attacking_enemies {
+        pawn.search_timer.tick(time.delta());
+    }
+
+    for (entity, WorkOrder(work_order::AttackPawn(other_entity)), pawn) in &q_all_attacking_pawns {
+        if q_all_attacking_enemies
+            .get(*other_entity)
+            .or(q_all_attacking_pawns.get(*other_entity))
+            .is_err()
+        {
+            commands
+                .entity(entity)
+                .clear_status()
+                .clear_work_order()
+                .insert(PawnStatus(pawn_status::Idle));
+            continue;
+        }
+
+        if !pawn.search_timer.finished() {
+            continue;
+        }
+
+        queued_attacks.push(AttackMetadata {
+            entity,
+            attacking_entity: *other_entity,
+            attack_for: PAWN_ATTACK_STRENGTH,
+            attacking_enemy: true,
+        });
+    }
+    for (entity, WorkOrder(work_order::AttackPawn(other_entity)), pawn) in &q_all_attacking_enemies
+    {
+        if q_all_attacking_enemies
+            .get(*other_entity)
+            .or(q_all_attacking_pawns.get(*other_entity))
+            .is_err()
+        {
+            commands
+                .entity(entity)
+                .clear_status()
+                .clear_work_order()
+                .insert(PawnStatus(pawn_status::Idle));
+            continue;
+        }
+        if !pawn.search_timer.finished() {
+            continue;
+        }
+
+        queued_attacks.push(AttackMetadata {
+            entity,
+            attacking_entity: *other_entity,
+            attack_for: ENEMY_ATTACK_STRENGTH,
+            attacking_enemy: false,
+        });
+    }
+
+    for AttackMetadata {
+        attack_for,
+        attacking_entity,
+        entity,
+        attacking_enemy,
+    } in queued_attacks
+    {
+        let Some((_, _, mut pawn)) = q_all_attacking_pawns
+            .get_mut(attacking_entity)
+            .ok()
+            .or(q_all_attacking_enemies.get_mut(attacking_entity).ok())
+        else {
+            commands
+                .entity(entity)
+                .clear_status()
+                .clear_work_order()
+                .insert(PawnStatus(pawn_status::Idle));
+            continue;
+        };
+
+        pawn.health = pawn.health.saturating_sub(attack_for);
+        if pawn.health == 0 {
+            commands.entity(attacking_entity).despawn_recursive();
+
+            if attacking_enemy {
+                game_resources.pawns = game_resources.pawns.saturating_sub(1);
+            }
+
+            commands
+                .entity(entity)
+                .clear_status()
+                .clear_work_order()
+                .insert(PawnStatus(pawn_status::Idle));
+        }
+    }
 }
