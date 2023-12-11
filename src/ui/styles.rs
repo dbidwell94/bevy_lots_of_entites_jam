@@ -45,6 +45,7 @@ pub fn text_style(
 pub fn top_right_anchor(node: &mut NodeBundle) {
     node.style = Style {
         display: Display::Flex,
+        flex_direction: FlexDirection::Column,
         position_type: PositionType::Absolute,
         top: Val::Percent(0.),
         right: Val::Percent(0.),
@@ -57,6 +58,7 @@ pub fn top_right_anchor(node: &mut NodeBundle) {
 pub fn bottom_center_anchor(node: &mut NodeBundle) {
     top_right_anchor(node);
     node.style.position_type = PositionType::Absolute;
+    node.style.flex_direction = FlexDirection::Row;
     node.style.top = Val::Auto;
     node.style.bottom = Val::Percent(0.);
     node.style.right = Val::Auto;

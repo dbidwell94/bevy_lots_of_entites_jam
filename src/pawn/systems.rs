@@ -20,6 +20,7 @@ const INITIAL_PAWN_COUNT: usize = 10;
 const MOVE_SPEED: f32 = 60.;
 const MAX_RESOURCES: usize = 15;
 const RESOURCE_GAIN_RATE: usize = 1;
+const PAWN_COST: usize = 100;
 
 fn spawn_pawn_in_random_location(
     commands: &mut Commands,
@@ -116,6 +117,7 @@ pub fn work_idle_pawns(
             Without<WorkOrder<work_order::MineStone>>,
             Without<PawnStatus<pawn_status::Moving>>,
             With<PawnStatus<Idle>>,
+            Without<Enemy>,
         ),
     >,
     q_stones: Query<Entity, With<StoneKind>>,
@@ -482,7 +484,7 @@ pub fn listen_for_spawn_pawn_event(
     };
 
     for _ in spawn_pawn_event_reader.read() {
-        if game_resources.stone > 100 {
+        if game_resources.stone >= PAWN_COST {
             game_resources.stone -= 100;
         } else {
             continue;
@@ -504,4 +506,8 @@ pub fn debug_pathfinding_error(
     for entity in &q_pawns {
         info!("Pathfinding error for pawn {:?}", entity);
     }
+}
+
+pub fn spawn_enemy_pawns() {
+    // TODO! Spawn enemy pawns
 }

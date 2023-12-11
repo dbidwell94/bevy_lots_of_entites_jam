@@ -16,6 +16,9 @@ pub struct Pawn {
 }
 
 #[derive(Component)]
+pub struct Enemy;
+
+#[derive(Component)]
 pub struct HealthBar;
 
 #[derive(Bundle)]

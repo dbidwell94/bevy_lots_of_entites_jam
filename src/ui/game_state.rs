@@ -10,8 +10,13 @@ impl Plugin for GameStateUIPlugin {
         app.add_systems(OnEnter(GameState::Main), game_state_ui)
             .add_systems(
                 Update,
-                update_resource_counter.run_if(
-                    in_state(GameState::Main).and_then(resource_changed::<GameResources>()),
+                (
+                    (update_resource_counter, update_pawn_counter).run_if(
+                        in_state(GameState::Main).and_then(resource_changed::<GameResources>()),
+                    ),
+                    // update_pawn_counter.run_if(
+                    //     in_state(GameState::Main).and_then(resource_changed::<GameResources>()),
+                    // ),
                 ),
             )
             .add_systems(
@@ -28,6 +33,8 @@ impl Plugin for GameStateUIPlugin {
 
 #[derive(Component)]
 struct GameResourceCounter;
+#[derive(Component)]
+struct PawnResourceCounter;
 
 #[derive(Component)]
 struct GameStateUI;
@@ -42,6 +49,7 @@ struct TurretSpawnButton;
 
 fn game_state_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     let mut resource_entity = None;
+    let mut pawn_entity = None;
 
     let mut pawn_spawn_button = None;
     let mut wall_spawn_button = None;
@@ -56,6 +64,10 @@ fn game_state_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 node((), p, |p| {
                     text("Resources: ", c_pixel_text, text_style(Some(28.)), p);
                     text("0", c_pixel_text, text_style(Some(28.)), p).set(&mut resource_entity);
+                });
+                node((), p, |p| {
+                    text("Pawns: ", c_pixel_text, text_style(Some(28.)), p);
+                    text("0", c_pixel_text, text_style(Some(28.)), p).set(&mut pawn_entity);
                 });
             });
             node(bottom_center_anchor, p, |p| {
@@ -82,6 +94,9 @@ fn game_state_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         .entity(wall_spawn_button.unwrap())
         .insert(WallSpawnButton);
     commands
+        .entity(pawn_entity.unwrap())
+        .insert(PawnResourceCounter);
+    commands
         .entity(pawn_spawn_button.unwrap())
         .insert(PawnSpawnButton);
     commands
@@ -100,6 +115,16 @@ fn update_resource_counter(
 ) {
     for mut text in &mut query {
         text.sections[0].value = game_resources.stone.to_string();
+    }
+}
+
+fn update_pawn_counter(
+    game_resources: Res<GameResources>,
+    mut query: Query<&mut Text, With<PawnResourceCounter>>,
+) {
+    info!("Pawns: {}", game_resources.pawns);
+    for mut text in &mut query {
+        text.sections[0].value = game_resources.pawns.to_string();
     }
 }
 
