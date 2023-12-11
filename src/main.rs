@@ -21,7 +21,7 @@ use utils::TranslationHelper;
 #[cfg(target_arch = "wasm32")]
 const SIZE: usize = 128;
 #[cfg(not(target_arch = "wasm32"))]
-const SIZE: usize = 256;
+const SIZE: usize = 128;
 const DIRT_CUTOFF: f32 = -1.;
 const GRASS_CUTOFF: f32 = 0.0;
 const TILE_SIZE: f32 = 16.;

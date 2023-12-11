@@ -33,6 +33,7 @@ impl Plugin for PawnPlugin {
             .add_systems(
                 Update,
                 (
+                    systems::tick_timers,
                     systems::spawn_enemy_pawns,
                     systems::enemy_search_for_factory.after(systems::spawn_enemy_pawns),
                     systems::enemy_search_for_pawns.after(systems::enemy_search_for_factory),
@@ -64,7 +65,7 @@ pub struct EnemyWave {
 impl Default for EnemyWave {
     fn default() -> Self {
         Self {
-            wave: 0,
+            wave: 5,
             enemy_count_multiplier: 1,
             enemy_spawn_timer: Timer::from_seconds(30.0, TimerMode::Repeating),
         }

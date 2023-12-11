@@ -52,7 +52,7 @@ fn spawn_pawn_in_random_location(
                 animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                 mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                 moving: false,
-                search_timer: Timer::from_seconds(0.25, TimerMode::Repeating),
+                search_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
             },
             character_facing: CharacterFacing::Left,
             name: Name::new("Pawn"),
@@ -144,8 +144,6 @@ pub fn work_idle_pawns(
     }
 
     for (entity, transform) in &mut q_pawns {
-        info!("Working idle pawn");
-
         commands
             .entity(entity)
             .clear_status()
@@ -273,15 +271,12 @@ pub fn move_pawn(
 
 // TODO! Fix this function because it doesn't work properly. But it's not a priority right now.
 pub fn update_pawn_animation(
-    mut q_pawn: Query<(&mut TextureAtlasSprite, &mut Pawn, &CharacterFacing), With<Pawn>>,
-    time: Res<Time>,
+    mut q_pawn: Query<(&mut TextureAtlasSprite, &Pawn, &CharacterFacing), With<Pawn>>,
 ) {
-    for (mut sprite, mut pawn, facing) in &mut q_pawn {
+    for (mut sprite, pawn, facing) in &mut q_pawn {
         if !pawn.moving {
             sprite.index = *facing as usize;
             continue;
-        } else {
-            pawn.animation_timer.tick(time.delta());
         }
 
         if pawn.animation_timer.finished() {
@@ -344,12 +339,7 @@ pub fn mine_stone(
         ),
     >,
     mut q_pawns: Query<
-        (
-            Entity,
-            &mut Pawn,
-            &mut CarriedResources,
-            &WorkOrder<MineStone>,
-        ),
+        (Entity, &Pawn, &mut CarriedResources, &WorkOrder<MineStone>),
         (
             With<PawnStatus<pawn_status::Mining>>,
             Without<PawnStatus<pawn_status::Moving>>,
@@ -357,8 +347,8 @@ pub fn mine_stone(
     >,
     mut q_stones: Query<(Entity, &mut Stone, &Transform), With<StoneKind>>,
     mut navmesh: ResMut<Navmesh>,
-    time: Res<Time>,
 ) {
+    let mut destroyed_stones = HashSet::<Entity>::default();
     // loop through the q_pawns_moving_to_stone to see if any of them have reached their destination.
     // if they have, then we need to set their PawnStatus to Mining.
     for (pawn_entity, pawn) in &q_pawns_moving_to_stone {
@@ -370,7 +360,7 @@ pub fn mine_stone(
         }
     }
 
-    for (pawn_entity, mut pawn, mut carried_resources, work_order) in &mut q_pawns {
+    for (pawn_entity, pawn, mut carried_resources, work_order) in &mut q_pawns {
         if carried_resources.0 >= MAX_RESOURCES {
             commands
                 .entity(pawn_entity)
@@ -382,7 +372,7 @@ pub fn mine_stone(
             continue;
         }
 
-        if pawn.mine_timer.tick(time.delta()).finished() {
+        if pawn.mine_timer.finished() {
             let Ok((stone_entity, mut stone, stone_transform)) =
                 q_stones.get_mut(work_order.0.stone_entity)
             else {
@@ -401,6 +391,10 @@ pub fn mine_stone(
             } else {
                 // we're about to despawn an entity, get it's grid transform and remove it from the navmesh before we despawn it
 
+                if destroyed_stones.contains(&stone_entity) {
+                    continue;
+                }
+
                 let stone_grid = stone_transform.translation.world_pos_to_tile();
                 navmesh.0[stone_grid.x as usize][stone_grid.y as usize].walkable = true;
                 navmesh.0[stone_grid.x as usize][stone_grid.y as usize]
@@ -413,6 +407,7 @@ pub fn mine_stone(
                     .clear_status()
                     .clear_work_order()
                     .insert(PawnStatus(Idle));
+                destroyed_stones.insert(stone_entity);
             }
         }
     }
@@ -506,19 +501,25 @@ pub fn listen_for_spawn_pawn_event(
     }
 }
 
+pub fn tick_timers(mut q_pawns: Query<&mut Pawn>, time: Res<Time>) {
+    for mut pawn in &mut q_pawns {
+        pawn.search_timer.tick(time.delta());
+        pawn.mine_timer.tick(time.delta());
+        pawn.animation_timer.tick(time.delta());
+    }
+}
+
 pub fn debug_pathfinding_error(
     _: Commands,
     q_pawns: Query<Entity, With<PawnStatus<pawn_status::PathfindingError>>>,
 ) {
-    for entity in &q_pawns {
-        info!("Pathfinding error for pawn {:?}", entity);
-    }
+    for _ in &q_pawns {}
 }
 
 pub fn pawn_search_for_enemies(
     mut commands: Commands,
     mut q_pawns: Query<
-        (Entity, &GlobalTransform),
+        (Entity, &GlobalTransform, &Pawn),
         (
             Without<WorkOrder<work_order::AttackPawn>>,
             Without<Enemy>,
@@ -528,8 +529,12 @@ pub fn pawn_search_for_enemies(
     q_enemies: Query<(Entity, &GlobalTransform), (With<Enemy>, With<Pawn>)>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
-    for (pawn_entity, pawn_transform) in &mut q_pawns {
+    for (pawn_entity, pawn_transform, pawn) in &mut q_pawns {
         let pawn_pos = pawn_transform.translation().world_pos_to_tile();
+
+        if !pawn.search_timer.finished() {
+            continue;
+        }
 
         let mut closest: Option<(Vec2, Entity)> = None;
 
@@ -565,19 +570,6 @@ pub fn pawn_search_for_enemies(
         }
     }
 }
-
-// pub fn check_target_still_exists(
-//     mut commands: Commands,
-//     q_attacking_pawn_query: Query<(Entity, &WorkOrder<work_order::AttackPawn>)>,
-//     q_pawns: Query<Entity, With<Pawn>>,
-// ) {
-//     for (entity, WorkOrder(work_order::AttackPawn(target_entity))) in &q_attacking_pawn_query {
-//         if q_pawns.get(*target_entity).is_err() {
-//             commands.entity(entity).clear_status().clear_work_order();
-//             info!("Target {:?} no longer exists", target_entity);
-//         }
-//     }
-// }
 
 pub fn spawn_enemy_pawns(
     mut commands: Commands,
@@ -636,7 +628,7 @@ pub fn spawn_enemy_pawns(
                     move_to: None,
                     health: 100,
                     max_health: 100,
-                    search_timer: Timer::from_seconds(0.25, TimerMode::Repeating),
+                    search_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
                     animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                     mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                     moving: false,
@@ -714,8 +706,8 @@ pub fn enemy_search_for_factory(
 
 pub fn enemy_search_for_pawns(
     mut commands: Commands,
-    mut q_enemy_pawns: Query<
-        (Entity, &GlobalTransform, &mut Pawn),
+    q_enemy_pawns: Query<
+        (Entity, &GlobalTransform, &Pawn),
         (
             With<Enemy>,
             With<PawnStatus<pawn_status::Moving>>,
@@ -723,12 +715,10 @@ pub fn enemy_search_for_pawns(
         ),
     >,
     q_pawns: Query<(Entity, &GlobalTransform), (With<Pawn>, Without<Enemy>)>,
-    time: Res<Time>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
-    for (enemy_entity, enemy_transform, mut enemy) in &mut q_enemy_pawns {
+    for (enemy_entity, enemy_transform, enemy) in &q_enemy_pawns {
         // tick the look timer
-        enemy.search_timer.tick(time.delta());
 
         if !enemy.search_timer.finished() {
             continue;
@@ -774,7 +764,7 @@ pub fn enemy_search_for_pawns(
 
 pub fn update_pathfinding_to_pawn(
     mut commands: Commands,
-    mut q_all_attacking_pawns: Query<
+    q_all_attacking_pawns: Query<
         (
             Entity,
             &WorkOrder<work_order::AttackPawn>,
@@ -783,13 +773,8 @@ pub fn update_pathfinding_to_pawn(
         ),
         (With<Pawn>, With<WorkOrder<work_order::AttackPawn>>),
     >,
-    time: Res<Time>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
-    for (_, _, _, mut pawn) in &mut q_all_attacking_pawns {
-        pawn.search_timer.tick(time.delta());
-    }
-
     for (entity, WorkOrder(work_order::AttackPawn(other_entity)), transform, pawn) in
         &q_all_attacking_pawns
     {
@@ -847,7 +832,6 @@ pub fn attack_pawn(
             With<Enemy>,
         ),
     >,
-    time: Res<Time>,
     mut game_resources: ResMut<GameResources>,
 ) {
     struct AttackMetadata {
@@ -858,13 +842,6 @@ pub fn attack_pawn(
     }
 
     let mut queued_attacks: Vec<AttackMetadata> = Vec::new();
-
-    for (_, _, mut pawn) in &mut q_all_attacking_pawns {
-        pawn.search_timer.tick(time.delta());
-    }
-    for (_, _, mut pawn) in &mut q_all_attacking_enemies {
-        pawn.search_timer.tick(time.delta());
-    }
 
     for (entity, WorkOrder(work_order::AttackPawn(other_entity)), pawn) in &q_all_attacking_pawns {
         if q_all_attacking_enemies
