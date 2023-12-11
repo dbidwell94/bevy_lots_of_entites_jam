@@ -122,7 +122,6 @@ fn update_pawn_counter(
     game_resources: Res<GameResources>,
     mut query: Query<&mut Text, With<PawnResourceCounter>>,
 ) {
-    info!("Pawns: {}", game_resources.pawns);
     for mut text in &mut query {
         text.sections[0].value = game_resources.pawns.to_string();
     }

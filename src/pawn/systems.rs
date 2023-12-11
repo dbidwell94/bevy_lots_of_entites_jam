@@ -1,8 +1,8 @@
 use super::components::pawn_status::{Idle, Pathfinding, PawnStatus};
 use super::components::work_order::{MineStone, WorkOrder};
-use super::SpawnPawnRequestEvent;
+use super::{EnemyWave, SpawnPawnRequestEvent};
 use crate::factory::components::{Factory, Placed};
-use crate::navmesh::components::{Navmesh, PathfindAnswer, PathfindRequest};
+use crate::navmesh::components::{NavTileOccupant, Navmesh, PathfindAnswer, PathfindRequest};
 use crate::navmesh::get_pathing;
 use crate::stone::{Stone, StoneKind};
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     pawn::components::*,
     utils::*,
 };
-use crate::{GameResources, TILE_SIZE};
+use crate::{GameResources, SIZE, TILE_SIZE};
 use bevy::prelude::*;
 use bevy::utils::HashSet;
 use rand::prelude::*;
@@ -21,13 +21,14 @@ const MOVE_SPEED: f32 = 60.;
 const MAX_RESOURCES: usize = 15;
 const RESOURCE_GAIN_RATE: usize = 1;
 const PAWN_COST: usize = 100;
+const ENEMY_TILE_RANGE: usize = 10;
 
 fn spawn_pawn_in_random_location(
     commands: &mut Commands,
     pawn_res: &Res<MalePawns>,
     game_resources: &mut ResMut<GameResources>,
     factory_transform: &GlobalTransform,
-    navmesh: &Res<Navmesh>,
+    _: &Res<Navmesh>,
 ) {
     let radius = TILE_SIZE * 5.;
     let mut rng = rand::thread_rng();
@@ -49,6 +50,7 @@ fn spawn_pawn_in_random_location(
                 animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                 mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                 moving: false,
+                search_timer: Timer::from_seconds(2.5, TimerMode::Repeating),
             },
             character_facing: CharacterFacing::Left,
             name: Name::new("Pawn"),
@@ -296,9 +298,9 @@ pub fn update_health_ui(
     q_pawns: Query<&Pawn>,
     mut q_health_bar: Query<(&Parent, &mut Sprite), With<HealthBar>>,
 ) {
-    let GREEN_HEALTH_THRESHOLD: usize = 75;
-    let YELLOW_HEALTH_THRESHOLD: usize = 50;
-    let RED_HEALTH_THRESHOLD: usize = 25;
+    let green_health_threshold: usize = 75;
+    let yellow_health_threshold: usize = 50;
+    let red_health_threshold: usize = 25;
 
     for (parent, mut sprite) in &mut q_health_bar {
         let pawn_entity = parent.get();
@@ -314,11 +316,11 @@ pub fn update_health_ui(
 
         if pawn.health == pawn.max_health {
             sprite.color = Color::NONE;
-        } else if pawn.health > GREEN_HEALTH_THRESHOLD {
+        } else if pawn.health > green_health_threshold {
             sprite.color = Color::GREEN;
-        } else if pawn.health > YELLOW_HEALTH_THRESHOLD {
+        } else if pawn.health > yellow_health_threshold {
             sprite.color = Color::YELLOW;
-        } else if pawn.health > RED_HEALTH_THRESHOLD {
+        } else if pawn.health > red_health_threshold {
             sprite.color = Color::RED;
         } else {
             sprite.color = Color::rgb(0.5, 0., 0.);
@@ -500,7 +502,7 @@ pub fn listen_for_spawn_pawn_event(
 }
 
 pub fn debug_pathfinding_error(
-    mut commands: Commands,
+    _: Commands,
     q_pawns: Query<Entity, With<PawnStatus<pawn_status::PathfindingError>>>,
 ) {
     for entity in &q_pawns {
@@ -508,6 +510,247 @@ pub fn debug_pathfinding_error(
     }
 }
 
-pub fn spawn_enemy_pawns() {
-    // TODO! Spawn enemy pawns
+pub fn pawn_search_for_enemies(
+    mut commands: Commands,
+    mut q_pawns: Query<
+        (Entity, &mut Pawn, &GlobalTransform),
+        (Without<WorkOrder<work_order::AttackPawn>>, Without<Enemy>),
+    >,
+    q_enemies: Query<(Entity, &GlobalTransform), (With<Enemy>, With<Pawn>)>,
+    mut pathfinding_event_writer: EventWriter<PathfindRequest>,
+) {
+    for (pawn_entity, mut pawn, pawn_transform) in &mut q_pawns {
+        let pawn_grid_pos = pawn_transform.translation().world_pos_to_tile();
+
+        let mut closest: Option<(Vec2, Entity)> = None;
+
+        for (enemy_entity, enemy_transform) in &q_enemies {
+            // check if the pawn is within range of the enemy
+            let enemy_tile_pos = enemy_transform.translation().world_pos_to_tile();
+
+            if (enemy_tile_pos - pawn_grid_pos).length() < ENEMY_TILE_RANGE as f32 {
+                // check if the pawn is closer than the current closest pawn
+                if let Some((closest_pos, _)) = closest {
+                    if (enemy_tile_pos - pawn_grid_pos).length()
+                        < (closest_pos - pawn_grid_pos).length()
+                    {
+                        closest = Some((enemy_tile_pos, enemy_entity));
+                    }
+                } else {
+                    closest = Some((enemy_tile_pos, enemy_entity));
+                }
+            }
+        }
+
+        if let Some((closest_pos, enemy_entity)) = closest {
+            commands
+                .entity(pawn_entity)
+                .clear_work_order()
+                .clear_status()
+                .insert(WorkOrder(work_order::AttackPawn(enemy_entity)))
+                .insert(PawnStatus(pawn_status::Pathfinding));
+
+            pathfinding_event_writer.send(PathfindRequest {
+                end: closest_pos,
+                entity: pawn_entity,
+                start: pawn_grid_pos,
+            });
+        }
+    }
+}
+
+pub fn spawn_enemy_pawns(
+    mut commands: Commands,
+    mut enemy_wave: ResMut<EnemyWave>,
+    pawn_res: Res<MalePawns>,
+    time: Res<Time>,
+    navmesh: Res<Navmesh>,
+) {
+    enemy_wave.enemy_spawn_timer.tick(time.delta());
+
+    if !enemy_wave.enemy_spawn_timer.finished() {
+        return;
+    }
+    enemy_wave.wave += 1;
+
+    // get a random boolean true or false
+    let mut rng = rand::thread_rng();
+    let spawn_x = rng.gen_bool(0.5);
+
+    let spawn_location: Vec2;
+
+    loop {
+        let temp_location: (usize, usize) = if spawn_x {
+            // randomly choose between 0 or SIZE (left or right)
+            let x: usize = if rng.gen_bool(0.5) { SIZE } else { 0 };
+            let y = rng.gen_range(0..SIZE - 1);
+
+            (x, y)
+        } else {
+            let x = rng.gen_range(0..SIZE - 1);
+            let y: usize = if rng.gen_bool(0.5) { SIZE } else { 0 };
+            (x, y)
+        };
+
+        // check navtile to ensure it's walkable
+        if let Some(NavTileOccupant { walkable, .. }) = navmesh
+            .0
+            .get(temp_location.0)
+            .and_then(|o| o.get(temp_location.1))
+        {
+            if *walkable {
+                spawn_location = Vec2::new(temp_location.0 as f32, temp_location.1 as f32);
+                break;
+            }
+        }
+    }
+
+    // convert spawn_location to world coordinates
+    let spawn_location = spawn_location.tile_pos_to_world();
+
+    // spawn enemy pawn
+    let pawn_entity = commands
+        .spawn(PawnBundle {
+            pawn: Pawn {
+                move_path: VecDeque::new(),
+                move_to: None,
+                health: 100,
+                max_health: 100,
+                search_timer: Timer::from_seconds(2.5, TimerMode::Repeating),
+                animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
+                mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
+                moving: false,
+            },
+            character_facing: CharacterFacing::Left,
+            name: Name::new("Enemy"),
+            sprite_bundle: SpriteSheetBundle {
+                texture_atlas: pawn_res.get_random(),
+                transform: Transform::from_translation(Vec3::new(
+                    spawn_location.x,
+                    spawn_location.y,
+                    1.,
+                )),
+                sprite: TextureAtlasSprite {
+                    anchor: bevy::sprite::Anchor::BottomLeft,
+                    index: CharacterFacing::Left as usize,
+                    color: Color::RED,
+                    ..default()
+                },
+                ..Default::default()
+            },
+            pawn_status: PawnStatus(Idle),
+            resources: CarriedResources(0),
+        })
+        .insert(Enemy)
+        .id();
+
+    commands
+        .spawn(HealthBundle {
+            health_bar: HealthBar,
+            health_bundle: SpriteBundle {
+                transform: Transform::from_xyz(16. / 2., 20., 1.),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::new(16., 2.)),
+                    color: Color::NONE,
+                    ..default()
+                },
+                ..default()
+            },
+        })
+        .set_parent(pawn_entity);
+}
+
+pub fn enemy_search_for_factory(
+    mut commands: Commands,
+    q_enemy_pawns: Query<
+        (Entity, &GlobalTransform),
+        (With<Enemy>, With<PawnStatus<pawn_status::Idle>>),
+    >,
+    q_factory: Query<&GlobalTransform, (With<Factory>, With<Placed>)>,
+    mut nav_request: EventWriter<PathfindRequest>,
+) {
+    let Ok(factory) = q_factory.get_single() else {
+        return;
+    };
+
+    for (entity, transform) in &q_enemy_pawns {
+        let grid_location = transform.translation().world_pos_to_tile();
+
+        nav_request.send(PathfindRequest {
+            start: grid_location,
+            end: factory.translation().world_pos_to_tile(),
+            entity,
+        });
+
+        commands
+            .entity(entity)
+            .clear_status()
+            .clear_work_order()
+            .insert(PawnStatus(pawn_status::Pathfinding))
+            .insert(WorkOrder(work_order::AttackFactory));
+    }
+}
+
+pub fn enemy_search_for_pawns(
+    mut commands: Commands,
+    mut q_enemy_pawns: Query<
+        (Entity, &GlobalTransform, &mut Pawn),
+        (
+            With<Enemy>,
+            With<PawnStatus<pawn_status::Moving>>,
+            Without<WorkOrder<work_order::AttackPawn>>,
+        ),
+    >,
+    q_pawns: Query<(Entity, &GlobalTransform), (With<Pawn>, Without<Enemy>)>,
+    time: Res<Time>,
+    mut pathfinding_event_writer: EventWriter<PathfindRequest>,
+) {
+    for (enemy_entity, enemy_transform, mut enemy) in &mut q_enemy_pawns {
+        // tick the look timer
+        enemy.search_timer.tick(time.delta());
+
+        if !enemy.search_timer.finished() {
+            continue;
+        }
+        let enemy_grid_pos = enemy_transform.translation().world_pos_to_tile();
+
+        let mut closest: Option<(Vec2, Entity)> = None;
+
+        for (pawn_entity, pawn_transform) in &q_pawns {
+            // check if the pawn is within range of the enemy
+            let pawn_tile_pos = pawn_transform.translation().world_pos_to_tile();
+
+            if (pawn_tile_pos - enemy_grid_pos).length() < ENEMY_TILE_RANGE as f32 {
+                // check if the pawn is closer than the current closest pawn
+                if let Some((closest_pos, _)) = closest {
+                    if (pawn_tile_pos - enemy_grid_pos).length()
+                        < (closest_pos - enemy_grid_pos).length()
+                    {
+                        closest = Some((pawn_tile_pos, pawn_entity));
+                    }
+                } else {
+                    closest = Some((pawn_tile_pos, pawn_entity));
+                }
+            }
+        }
+
+        if let Some((closest_pos, pawn_entity)) = closest {
+            commands
+                .entity(enemy_entity)
+                .clear_work_order()
+                .clear_status()
+                .insert(WorkOrder(work_order::AttackPawn(pawn_entity)))
+                .insert(PawnStatus(pawn_status::Pathfinding));
+
+            pathfinding_event_writer.send(PathfindRequest {
+                end: closest_pos,
+                entity: enemy_entity,
+                start: enemy_grid_pos,
+            });
+        }
+    }
+}
+
+pub fn update_pathfinding_to_pawn(mut commands: Commands) {
+    
 }

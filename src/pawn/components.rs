@@ -12,6 +12,7 @@ pub struct Pawn {
     pub max_health: usize,
     pub animation_timer: Timer,
     pub mine_timer: Timer,
+    pub search_timer: Timer,
     pub moving: bool,
 }
 
@@ -119,4 +120,12 @@ pub mod work_order {
     #[derive(Component)]
     pub struct BuildItem(pub Entity);
     impl OrderItem for BuildItem {}
+
+    #[derive(Component)]
+    pub struct AttackPawn(pub Entity);
+    impl OrderItem for AttackPawn {}
+
+    #[derive(Component)]
+    pub struct AttackFactory;
+    impl OrderItem for AttackFactory {}
 }

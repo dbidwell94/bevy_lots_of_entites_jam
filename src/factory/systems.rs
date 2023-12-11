@@ -1,6 +1,6 @@
 use super::components::*;
-use crate::{navmesh, CursorPosition, GameState, GameTile, TILE_SIZE};
-use crate::{utils::*, SIZE};
+use crate::utils::*;
+use crate::{navmesh, CursorPosition, GameState, GameTile};
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 

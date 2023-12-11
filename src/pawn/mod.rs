@@ -29,6 +29,17 @@ impl Plugin for PawnPlugin {
                     systems::listen_for_spawn_pawn_event.run_if(in_state(GameState::Main)),
                     systems::debug_pathfinding_error,
                 ),
+            )
+            .add_systems(
+                Update,
+                (
+                    systems::spawn_enemy_pawns,
+                    systems::enemy_search_for_factory,
+                    systems::enemy_search_for_pawns,
+                    systems::update_pathfinding_to_pawn,
+                    systems::pawn_search_for_enemies,
+                )
+                    .run_if(in_state(GameState::Main)),
             );
     }
 }
@@ -41,8 +52,19 @@ pub struct WorkQueue {
 #[derive(Event, Debug)]
 pub struct SpawnPawnRequestEvent;
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct EnemyWave {
     pub wave: usize,
-    pub enemy_count: usize,
+    pub enemy_count_multiplier: usize,
+    pub enemy_spawn_timer: Timer,
+}
+
+impl Default for EnemyWave {
+    fn default() -> Self {
+        Self {
+            wave: 0,
+            enemy_count_multiplier: 2,
+            enemy_spawn_timer: Timer::from_seconds(15.0, TimerMode::Repeating),
+        }
+    }
 }
