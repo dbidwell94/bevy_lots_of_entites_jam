@@ -87,6 +87,7 @@ fn main() {
         )
         .init_resource::<WorldNoise>()
         .init_resource::<CursorPosition>()
+        .init_resource::<GameResources>()
         .run();
 }
 
@@ -115,6 +116,12 @@ impl Default for WorldNoise {
             offset: random::<u16>(),
         }
     }
+}
+
+#[derive(Resource, Debug, Default)]
+pub struct GameResources {
+    pub stone: usize,
+    pub pawns: usize,
 }
 
 #[derive(Resource, Default)]

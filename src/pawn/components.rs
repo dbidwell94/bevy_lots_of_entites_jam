@@ -1,7 +1,8 @@
-use std::collections::VecDeque;
-
 use crate::assets::CharacterFacing;
 use bevy::prelude::*;
+pub use pawn_status::ClearStatus;
+use std::collections::VecDeque;
+pub use work_order::ClearWorkOrder;
 
 #[derive(Component)]
 pub struct Pawn {
@@ -10,6 +11,7 @@ pub struct Pawn {
     pub health: usize,
     pub max_health: usize,
     pub animation_timer: Timer,
+    pub mine_timer: Timer,
     pub moving: bool,
 }
 
@@ -36,7 +38,22 @@ pub struct PawnBundle<T: Component + pawn_status::Status> {
 pub struct CarriedResources(pub usize);
 
 pub mod pawn_status {
-    use bevy::prelude::*;
+    use bevy::{ecs::system::EntityCommands, prelude::*};
+
+    pub trait ClearStatus {
+        fn clear_status(&mut self) -> &mut Self;
+    }
+
+    impl ClearStatus for EntityCommands<'_, '_, '_> {
+        fn clear_status(&mut self) -> &mut Self {
+            self.remove::<PawnStatus<Idle>>()
+                .remove::<PawnStatus<Pathfinding>>()
+                .remove::<PawnStatus<Moving>>()
+                .remove::<PawnStatus<Mining>>();
+
+            self
+        }
+    }
 
     pub trait Status {}
 
@@ -58,8 +75,40 @@ pub mod pawn_status {
     #[derive(Component)]
     pub struct Mining;
     impl Status for Mining {}
+}
+
+pub mod work_order {
+    use bevy::{ecs::system::EntityCommands, prelude::*};
+
+    pub trait ClearWorkOrder {
+        fn clear_work_order(&mut self) -> &mut Self;
+    }
+
+    impl ClearWorkOrder for EntityCommands<'_, '_, '_> {
+        fn clear_work_order(&mut self) -> &mut Self {
+            self.remove::<WorkOrder<MineStone>>()
+                .remove::<WorkOrder<ReturnToFactory>>();
+
+            self
+        }
+    }
+
+    pub trait OrderItem {}
 
     #[derive(Component)]
-    pub struct Returning;
-    impl Status for Returning {}
+    pub struct WorkOrder<T: Component + OrderItem>(pub T);
+
+    #[derive(Component)]
+    pub struct MineStone {
+        pub stone_entity: Entity,
+    }
+    impl OrderItem for MineStone {}
+
+    #[derive(Component)]
+    pub struct ReturnToFactory;
+    impl OrderItem for ReturnToFactory {}
+
+    #[derive(Component)]
+    pub struct BuildItem(pub Entity);
+    impl OrderItem for BuildItem {}
 }

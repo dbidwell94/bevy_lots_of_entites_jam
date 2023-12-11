@@ -1,7 +1,10 @@
 use bevy::{prelude::*, text::BreakLineOn};
 
 /// Display: Flex centered on screen
-pub fn root_full_screen(justify: Option<JustifyContent>, align: Option<AlignItems>) -> impl Fn(&mut NodeBundle) {
+pub fn root_full_screen(
+    justify: Option<JustifyContent>,
+    align: Option<AlignItems>,
+) -> impl Fn(&mut NodeBundle) {
     move |node: &mut NodeBundle| {
         node.style = Style {
             width: Val::Percent(100.0),
@@ -33,4 +36,16 @@ pub fn c_pixel_text(_: &AssetServer, tb: &mut TextBundle) {
 pub fn text_style(assets: &AssetServer, ts: &mut TextStyle) {
     ts.font = assets.load("pixel.ttf");
     ts.font_size = 40.0;
+}
+
+pub fn top_right_anchor(node: &mut NodeBundle) {
+    node.style = Style {
+        display: Display::Flex,
+        top: Val::Px(0.0),
+        right: Val::Px(0.0),
+        width: Val::Px(200.0),
+        height: Val::Auto,
+        ..default()
+    };
+    node.background_color = BackgroundColor(Color::rgba(0., 0., 0., 0.85));
 }

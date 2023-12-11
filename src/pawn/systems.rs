@@ -1,26 +1,29 @@
 use super::components::pawn_status::{Idle, Pathfinding, PawnStatus};
+use super::components::work_order::{MineStone, WorkOrder};
 use crate::factory::components::{Factory, Placed};
 use crate::navmesh::components::{Navmesh, PathfindAnswer, PathfindRequest};
-use crate::stone::StoneKind;
-use crate::TILE_SIZE;
+use crate::stone::{Stone, StoneKind};
 use crate::{
     assets::{CharacterFacing, MalePawns},
     pawn::components::*,
     utils::*,
 };
+use crate::{GameResources, TILE_SIZE};
 use bevy::prelude::*;
 use bevy::utils::HashSet;
 use rand::prelude::*;
 use std::collections::VecDeque;
 
 const INITIAL_PAWN_COUNT: usize = 10;
-const MOVE_SPEED: f32 = 45.;
+const MOVE_SPEED: f32 = 60.;
 const MAX_RESOURCES: usize = 50;
+const RESOURCE_GAIN_RATE: usize = 5;
 
 pub fn initial_pawn_spawn(
     mut commands: Commands,
     pawn_res: Res<MalePawns>,
     q_factory: Query<&GlobalTransform, (With<Factory>, With<Placed>)>,
+    mut game_resources: ResMut<GameResources>,
 ) {
     let Ok(factory_transform) = q_factory.get_single() else {
         return;
@@ -45,6 +48,7 @@ pub fn initial_pawn_spawn(
                     health: 100,
                     max_health: 100,
                     animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
+                    mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                     moving: false,
                 },
                 character_facing: CharacterFacing::Left,
@@ -78,12 +82,23 @@ pub fn initial_pawn_spawn(
                 },
             })
             .set_parent(pawn_entity);
+
+        game_resources.pawns += 1;
     }
 }
 
 pub fn work_idle_pawns(
     mut commands: Commands,
-    mut q_pawns: Query<(Entity, &PawnStatus<Idle>, &CarriedResources, &mut Transform), With<Pawn>>,
+    mut q_pawns: Query<
+        (Entity, &Transform),
+        (
+            With<Pawn>,
+            Without<WorkOrder<work_order::ReturnToFactory>>,
+            Without<WorkOrder<work_order::MineStone>>,
+            Without<PawnStatus<pawn_status::Moving>>,
+            With<PawnStatus<Idle>>,
+        ),
+    >,
     q_stones: Query<Entity, With<StoneKind>>,
     navmesh: Res<Navmesh>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
@@ -93,19 +108,20 @@ pub fn work_idle_pawns(
     fn check_for_stones(
         entity_set: &HashSet<Entity>,
         q_stones: &Query<Entity, With<StoneKind>>,
-    ) -> bool {
+    ) -> (bool, Option<Entity>) {
         for entity in entity_set.iter() {
             if q_stones.get(*entity).is_ok() {
-                return true;
+                return (true, Some(*entity));
             }
         }
-        false
+        (false, None)
     }
 
-    for (entity, _, _, mut transform) in &mut q_pawns {
+    for (entity, transform) in &mut q_pawns {
+        info!("Entity {:?} is idle. Putting that pawn to work.", entity);
         commands
             .entity(entity)
-            .remove::<PawnStatus<Idle>>()
+            .clear_status()
             .insert(PawnStatus(Pathfinding));
 
         let grid_location = transform.translation.world_pos_to_tile();
@@ -114,29 +130,25 @@ pub fn work_idle_pawns(
         let grid_y = grid_location.y as usize;
 
         // search the navmesh for non-walkable tiles, and see if the entities within are in q_stones
-        let mut stone_location = None;
-
-        let mut found_stone = false;
+        let stone_location;
+        let stone_entity;
         let mut search_radius: usize = 1;
 
-        'base: while !found_stone {
+        'base: loop {
             for x in (grid_x.saturating_sub(search_radius))..=(grid_x + search_radius) {
                 for y in (grid_y.saturating_sub(search_radius))..=(grid_y + search_radius) {
                     if let Some(tile) = navmesh.get(x).and_then(|row| row.get(y)) {
-                        if !tile.walkable
-                            && check_for_stones(&tile.occupied_by, &q_stones)
-                            && !found_stone
-                        {
-                            found_stone = true;
+                        let (found, stone_ent) = check_for_stones(&tile.occupied_by, &q_stones);
+
+                        if !tile.walkable && found {
+                            stone_entity = stone_ent;
                             stone_location = Some(Vec2::new(x as f32, y as f32));
                             break 'base;
                         }
                     }
                 }
             }
-            if !found_stone {
-                search_radius += 1;
-            }
+            search_radius += 1;
         }
         if let Some(stone_location) = stone_location {
             pathfinding_event_writer.send(PathfindRequest {
@@ -144,11 +156,15 @@ pub fn work_idle_pawns(
                 end: stone_location,
                 entity,
             });
+            commands.entity(entity).insert(WorkOrder(MineStone {
+                stone_entity: stone_entity.unwrap(),
+            }));
         }
     }
 }
 
 pub fn listen_for_pathfinding_answers(
+    mut commands: Commands,
     mut answer_events: EventReader<PathfindAnswer>,
     mut q_pawns: Query<&mut Pawn, With<Pawn>>,
 ) {
@@ -159,6 +175,17 @@ pub fn listen_for_pathfinding_answers(
 
         if let Some(path) = &evt.path {
             pawn.move_path = path.clone().into();
+            commands
+                .entity(evt.entity)
+                .clear_status()
+                .insert(PawnStatus(pawn_status::Moving));
+        } else {
+            commands
+                .entity(evt.entity)
+                .clear_status()
+                .clear_work_order()
+                .insert(PawnStatus(Idle))
+                .log_components();
         }
     }
 }
@@ -206,6 +233,7 @@ pub fn move_pawn(
     }
 }
 
+// TODO! Fix this function because it doesn't work properly. But it's not a priority right now.
 pub fn update_pawn_animation(
     mut q_pawn: Query<(&mut TextureAtlasSprite, &mut Pawn, &CharacterFacing), With<Pawn>>,
     time: Res<Time>,
@@ -263,6 +291,151 @@ pub fn update_health_ui(
             sprite.color = Color::RED;
         } else {
             sprite.color = Color::rgb(0.5, 0., 0.);
+        }
+    }
+}
+
+pub fn mine_stone(
+    mut commands: Commands,
+    q_pawns_moving_to_stone: Query<
+        (Entity, &Pawn),
+        (
+            With<PawnStatus<pawn_status::Moving>>,
+            With<WorkOrder<MineStone>>,
+            Without<PawnStatus<pawn_status::Mining>>,
+        ),
+    >,
+    mut q_pawns: Query<
+        (
+            Entity,
+            &mut Pawn,
+            &mut CarriedResources,
+            &WorkOrder<MineStone>,
+        ),
+        (
+            With<PawnStatus<pawn_status::Mining>>,
+            Without<PawnStatus<pawn_status::Moving>>,
+        ),
+    >,
+    mut q_stones: Query<(Entity, &mut Stone, &Transform), With<StoneKind>>,
+    mut navmesh: ResMut<Navmesh>,
+    time: Res<Time>,
+) {
+    // loop through the q_pawns_moving_to_stone to see if any of them have reached their destination.
+    // if they have, then we need to set their PawnStatus to Mining.
+    for (pawn_entity, pawn) in &q_pawns_moving_to_stone {
+        if !pawn.moving {
+            commands
+                .entity(pawn_entity)
+                .clear_status()
+                .insert(PawnStatus(pawn_status::Mining));
+        }
+    }
+
+    for (pawn_entity, mut pawn, mut carried_resources, work_order) in &mut q_pawns {
+        if carried_resources.0 >= MAX_RESOURCES {
+            commands
+                .entity(pawn_entity)
+                .clear_work_order()
+                .clear_status()
+                .insert(PawnStatus(pawn_status::Idle))
+                .insert(WorkOrder(work_order::ReturnToFactory));
+
+            continue;
+        }
+
+        if pawn.mine_timer.tick(time.delta()).finished() {
+            let Ok((stone_entity, mut stone, stone_transform)) =
+                q_stones.get_mut(work_order.0.stone_entity)
+            else {
+                commands
+                    .entity(pawn_entity)
+                    .clear_status()
+                    .clear_work_order()
+                    .insert(PawnStatus(Idle));
+                continue;
+            };
+
+            if stone.remaining_resources > 0 {
+                stone.remaining_resources =
+                    stone.remaining_resources.saturating_sub(RESOURCE_GAIN_RATE);
+                carried_resources.0 = carried_resources.0.saturating_add(RESOURCE_GAIN_RATE);
+            } else {
+                // we're about to despawn an entity, get it's grid transform and remove it from the navmesh before we despawn it
+
+                let stone_grid = stone_transform.translation.world_pos_to_tile();
+                navmesh.0[stone_grid.x as usize][stone_grid.y as usize].walkable = true;
+                navmesh.0[stone_grid.x as usize][stone_grid.y as usize]
+                    .occupied_by
+                    .remove(&stone_entity);
+
+                commands.entity(stone_entity).despawn_recursive();
+                commands
+                    .entity(pawn_entity)
+                    .clear_status()
+                    .clear_work_order()
+                    .insert(PawnStatus(Idle));
+            }
+        }
+    }
+}
+
+pub fn return_to_factory(
+    mut commands: Commands,
+    q_pawns_need_pathfinding_to_factory: Query<
+        (Entity, &Transform),
+        (
+            With<WorkOrder<work_order::ReturnToFactory>>,
+            With<PawnStatus<pawn_status::Idle>>,
+            With<Pawn>,
+        ),
+    >,
+    mut q_pawns_moving_to_factory: Query<
+        (Entity, &Pawn, &mut CarriedResources),
+        (
+            With<PawnStatus<pawn_status::Moving>>,
+            With<WorkOrder<work_order::ReturnToFactory>>,
+            With<Pawn>,
+        ),
+    >,
+    q_factory: Query<&Transform, (With<Factory>, With<Placed>)>,
+    mut resources: ResMut<GameResources>,
+    mut pathfinding_event_writer: EventWriter<PathfindRequest>,
+) {
+    let Ok(factory_transform) = q_factory.get_single() else {
+        return;
+    };
+
+    let factory_grid = factory_transform.translation.world_pos_to_tile();
+
+    // Loop through idle pawns that are looking for the factory
+    for (pawn_entity, transform) in &q_pawns_need_pathfinding_to_factory {
+        let pawn_location = transform.translation.world_pos_to_tile();
+
+        pathfinding_event_writer.send(PathfindRequest {
+            start: pawn_location,
+            end: factory_grid,
+            entity: pawn_entity,
+        });
+
+        commands
+            .entity(pawn_entity)
+            .clear_status()
+            .insert(PawnStatus(pawn_status::Pathfinding));
+    }
+
+    // Loop through pawns that are moving to the factory looking for stopped pawns
+    // so we can start depositing resources into the factory
+    for (pawn_entity, pawn, mut carried_resources) in &mut q_pawns_moving_to_factory {
+        if !pawn.moving {
+            commands
+                .entity(pawn_entity)
+                .clear_status()
+                .clear_work_order()
+                .insert(PawnStatus(pawn_status::Idle));
+
+            resources.stone += carried_resources.0;
+            carried_resources.0 = 0;
         }
     }
 }
