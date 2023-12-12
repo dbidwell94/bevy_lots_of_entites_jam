@@ -57,11 +57,11 @@ fn stone_kind_to_resource<'a>(
     rock_collection: &'a Res<RockCollection>,
 ) -> &'a dyn RockAsset {
     match stone_kind {
-        StoneKind::CappedRock => &rock_collection.capped_rock,
-        StoneKind::RedRock => &rock_collection.red_rock,
-        StoneKind::SaltRock => &rock_collection.salt_rock,
-        StoneKind::StoneRock => &rock_collection.stone_rock,
-        StoneKind::TanRock => &rock_collection.tan_rock,
+        StoneKind::Capped => &rock_collection.capped_rock,
+        StoneKind::Red => &rock_collection.red_rock,
+        StoneKind::Salt => &rock_collection.salt_rock,
+        StoneKind::Stone => &rock_collection.stone_rock,
+        StoneKind::Tan => &rock_collection.tan_rock,
     }
 }
 
@@ -95,19 +95,19 @@ pub fn spawn_stone_tiles(
                 let stone_kind: StoneKind;
 
                 let rock: &dyn RockAsset = if noisy_bevy_value < -0.5 {
-                    stone_kind = StoneKind::CappedRock;
+                    stone_kind = StoneKind::Capped;
                     &rock_collection.capped_rock
                 } else if (-0.5..-0.25).contains(&noisy_bevy_value) {
-                    stone_kind = StoneKind::RedRock;
+                    stone_kind = StoneKind::Red;
                     &rock_collection.red_rock
                 } else if (-0.25..0.).contains(&noisy_bevy_value) {
-                    stone_kind = StoneKind::SaltRock;
+                    stone_kind = StoneKind::Salt;
                     &rock_collection.salt_rock
                 } else if (0. ..0.25).contains(&noisy_bevy_value) {
-                    stone_kind = StoneKind::StoneRock;
+                    stone_kind = StoneKind::Stone;
                     &rock_collection.stone_rock
                 } else {
-                    stone_kind = StoneKind::TanRock;
+                    stone_kind = StoneKind::Tan;
                     &rock_collection.tan_rock
                 };
 

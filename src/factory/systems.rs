@@ -25,7 +25,6 @@ pub fn initial_spawn_factory(
         },
         AabbGizmo {
             color: Some(Color::WHITE),
-            ..default()
         },
         Factory,
     ));
