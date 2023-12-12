@@ -479,16 +479,16 @@ pub fn return_to_factory(
     for (pawn_entity, transform) in &q_pawns_need_pathfinding_to_factory {
         let pawn_location = transform.translation.world_pos_to_tile();
 
+        commands
+            .entity(pawn_entity)
+            .clear_status()
+            .try_insert(PawnStatus(pawn_status::Pathfinding));
+
         pathfinding_event_writer.send(PathfindRequest {
             start: pawn_location,
             end: factory_grid,
             entity: pawn_entity,
         });
-
-        commands
-            .entity(pawn_entity)
-            .clear_status()
-            .try_insert(PawnStatus(pawn_status::Pathfinding));
     }
 
     // Loop through pawns that are moving to the factory looking for stopped pawns
@@ -548,14 +548,7 @@ pub fn retry_pathfinding(
     mut commands: Commands,
     mut q_pawns: Query<
         (Entity, &mut Pawn, &GlobalTransform),
-        (
-            With<PawnStatus<pawn_status::PathfindingError>>,
-            Without<Enemy>,
-        ),
-    >,
-    mut q_enemies: Query<
-        (Entity, &mut Pawn, &GlobalTransform),
-        (With<PawnStatus<pawn_status::PathfindingError>>, With<Enemy>),
+        With<PawnStatus<pawn_status::PathfindingError>>,
     >,
     q_factory: Query<&GlobalTransform, (With<Factory>, With<Placed>)>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
@@ -573,8 +566,7 @@ pub fn retry_pathfinding(
             .entity(entity)
             .clear_status()
             .clear_work_order()
-            .try_insert(PawnStatus(pawn_status::Pathfinding))
-            .try_insert(WorkOrder(work_order::ReturnToFactory));
+            .try_insert(PawnStatus(pawn_status::Idle));
 
         pawn.retry_pathfinding_timer.reset();
 
@@ -587,32 +579,6 @@ pub fn retry_pathfinding(
         });
 
         info!("Pawn {:?} is retrying pathfinding", entity);
-    }
-
-    for (entity, mut pawn, pawn_transform) in &mut q_enemies {
-        if !pawn.retry_pathfinding_timer.finished() {
-            continue;
-        }
-
-        commands
-            .entity(entity)
-            .clear_status()
-            .clear_work_order()
-            .try_insert(PawnStatus(pawn_status::Pathfinding))
-            .try_insert(WorkOrder(work_order::AttackFactory));
-
-        pawn.retry_pathfinding_timer.reset();
-
-        let pawn_pos = pawn_transform.translation().world_pos_to_tile();
-        let factory_pos = factory_transform.translation().world_pos_to_tile();
-
-        pathfinding_requests.push(PathfindRequest {
-            start: pawn_pos,
-            end: factory_pos,
-            entity,
-        });
-
-        info!("Enemy {:?} is retrying pathfinding", entity);
     }
 
     pathfinding_event_writer.send_batch(pathfinding_requests);
