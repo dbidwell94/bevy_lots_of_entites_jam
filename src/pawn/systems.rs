@@ -1,5 +1,5 @@
 use super::components::pawn_status::{Idle, Pathfinding, PawnStatus};
-use super::components::work_order::{MineStone, WorkOrder};
+use super::components::work_order::{AddWorkOrder, MineStone, WorkOrder};
 use super::{EnemyWave, SpawnPawnRequestEvent};
 use crate::factory::components::{Factory, Placed};
 use crate::navmesh::components::{NavTileOccupant, Navmesh, PathfindAnswer, PathfindRequest};
@@ -10,7 +10,7 @@ use crate::{
     pawn::components::*,
     utils::*,
 };
-use crate::{GameResources, SIZE, TILE_SIZE};
+use crate::{GameResources, GameState, SIZE, TILE_SIZE};
 use bevy::prelude::*;
 use bevy::utils::HashSet;
 use rand::prelude::*;
@@ -96,6 +96,7 @@ pub fn initial_pawn_spawn(
     q_factory: Query<&GlobalTransform, (With<Factory>, With<Placed>)>,
     mut game_resources: ResMut<GameResources>,
     navmesh: Res<Navmesh>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
     let Ok(factory_transform) = q_factory.get_single() else {
         return;
@@ -110,6 +111,8 @@ pub fn initial_pawn_spawn(
             &navmesh,
         );
     }
+
+    next_state.set(GameState::Main);
 }
 
 pub fn work_idle_pawns(
@@ -159,9 +162,8 @@ pub fn work_idle_pawns(
             commands
                 .entity(entity)
                 .clear_status()
-                .clear_work_order()
-                .try_insert(WorkOrder(work_order::ReturnToFactory {}))
-                .try_insert(PawnStatus(pawn_status::Pathfinding));
+                .try_insert(PawnStatus(pawn_status::Pathfinding))
+                .add_work_order(work_order::ReturnToFactory {});
 
             let grid_location = transform.translation.world_pos_to_tile();
             let factory_grid = factory_transform.translation().world_pos_to_tile();
@@ -219,9 +221,9 @@ pub fn work_idle_pawns(
                 end: stone_location,
                 entity,
             });
-            commands.entity(entity).try_insert(WorkOrder(MineStone {
+            commands.entity(entity).add_work_order(MineStone {
                 stone_entity: stone_entity.unwrap(),
-            }));
+            });
         }
     }
 }
@@ -229,7 +231,7 @@ pub fn work_idle_pawns(
 pub fn listen_for_pathfinding_answers(
     mut commands: Commands,
     mut answer_events: EventReader<PathfindAnswer>,
-    mut q_pawns: Query<&mut Pawn, With<Pawn>>,
+    mut q_pawns: Query<&mut Pawn, (With<Pawn>, With<PawnStatus<pawn_status::Pathfinding>>)>,
 ) {
     for evt in answer_events.read() {
         let Ok(mut pawn) = q_pawns.get_mut(evt.entity) else {
@@ -398,10 +400,9 @@ pub fn mine_stone(
         if carried_resources.0 >= MAX_RESOURCES {
             commands
                 .entity(pawn_entity)
-                .clear_work_order()
                 .clear_status()
                 .try_insert(PawnStatus(pawn_status::Idle))
-                .try_insert(WorkOrder(work_order::ReturnToFactory {}));
+                .add_work_order(work_order::ReturnToFactory {});
 
             continue;
         }
@@ -625,12 +626,11 @@ pub fn pawn_search_for_enemies(
         if let Some((closest_pos, enemy_entity)) = closest {
             commands
                 .entity(pawn_entity)
-                .clear_work_order()
                 .clear_status()
-                .try_insert(WorkOrder(work_order::AttackPawn {
+                .try_insert(PawnStatus(pawn_status::Pathfinding))
+                .add_work_order(work_order::AttackPawn {
                     pawn_entity: enemy_entity,
-                }))
-                .try_insert(PawnStatus(pawn_status::Pathfinding));
+                });
 
             pathfinding_event_writer.send(PathfindRequest {
                 end: closest_pos,
@@ -769,9 +769,8 @@ pub fn enemy_search_for_factory(
         commands
             .entity(entity)
             .clear_status()
-            .clear_work_order()
             .try_insert(PawnStatus(pawn_status::Pathfinding))
-            .try_insert(WorkOrder(work_order::AttackFactory {}));
+            .add_work_order(work_order::AttackFactory {});
     }
 }
 
@@ -813,10 +812,9 @@ pub fn enemy_search_for_pawns(
         if let Some((closest_pos, pawn_entity)) = closest {
             commands
                 .entity(enemy_entity)
-                .clear_work_order()
                 .clear_status()
-                .try_insert(WorkOrder(work_order::AttackPawn { pawn_entity }))
-                .try_insert(PawnStatus(pawn_status::Pathfinding));
+                .try_insert(PawnStatus(pawn_status::Pathfinding))
+                .add_work_order(work_order::AttackPawn { pawn_entity });
 
             pathfinding_event_writer.send(PathfindRequest {
                 end: closest_pos,
@@ -841,16 +839,9 @@ pub fn update_pathfinding_to_pawn(
     q_all_pawns: Query<&GlobalTransform, With<Pawn>>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
-    for (
-        entity,
-        WorkOrder(work_order::AttackPawn {
-            pawn_entity: other_entity,
-        }),
-        transform,
-        pawn,
-    ) in &q_all_attacking_pawns
-    {
-        if let Ok(other_transform) = q_all_pawns.get(*other_entity) {
+    for (entity, WorkOrder(boxed_order), transform, pawn) in &q_all_attacking_pawns {
+        let other_entity = boxed_order.pawn_entity;
+        if let Ok(other_transform) = q_all_pawns.get(other_entity) {
             let grid_location = transform.translation().world_pos_to_tile();
             let other_grid_location = other_transform.translation().world_pos_to_tile();
 
@@ -916,17 +907,12 @@ pub fn attack_pawn(
     let mut queued_attacks: Vec<AttackMetadata> = Vec::new();
     let mut destroyed_pawns = HashSet::<Entity>::default();
 
-    for (
-        entity,
-        WorkOrder(work_order::AttackPawn {
-            pawn_entity: other_entity,
-        }),
-        pawn,
-    ) in &q_all_attacking_pawns
-    {
+    for (entity, WorkOrder(boxed_order), pawn) in &q_all_attacking_pawns {
+        let other_entity = boxed_order.pawn_entity;
+
         if q_all_attacking_enemies
-            .get(*other_entity)
-            .or(q_all_attacking_pawns.get(*other_entity))
+            .get(other_entity)
+            .or(q_all_attacking_pawns.get(other_entity))
             .is_err()
         {
             commands
@@ -943,22 +929,17 @@ pub fn attack_pawn(
 
         queued_attacks.push(AttackMetadata {
             entity,
-            attacking_entity: *other_entity,
+            attacking_entity: other_entity,
             attack_for: PAWN_ATTACK_STRENGTH,
             attacking_enemy: true,
         });
     }
-    for (
-        entity,
-        WorkOrder(work_order::AttackPawn {
-            pawn_entity: other_entity,
-        }),
-        pawn,
-    ) in &q_all_attacking_enemies
-    {
+    for (entity, WorkOrder(boxed_order), pawn) in &q_all_attacking_enemies {
+        let other_entity = boxed_order.pawn_entity;
+
         if q_all_attacking_enemies
-            .get(*other_entity)
-            .or(q_all_attacking_pawns.get(*other_entity))
+            .get(other_entity)
+            .or(q_all_attacking_pawns.get(other_entity))
             .is_err()
         {
             commands
@@ -974,7 +955,7 @@ pub fn attack_pawn(
 
         queued_attacks.push(AttackMetadata {
             entity,
-            attacking_entity: *other_entity,
+            attacking_entity: other_entity,
             attack_for: ENEMY_ATTACK_STRENGTH,
             attacking_enemy: false,
         });

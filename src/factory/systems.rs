@@ -69,7 +69,7 @@ pub fn place_factory(
 
         commands.entity(factory_entity).insert((Placed, GameTile));
         commands.entity(factory_entity).remove::<AabbGizmo>();
-        game_state.set(GameState::Main);
+        game_state.set(GameState::PawnSpawn);
 
         // mark navmesh tiles as occupied
         for x in x as usize..x as usize + FACTORY_SIZE {

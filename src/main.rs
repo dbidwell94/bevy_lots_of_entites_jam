@@ -34,6 +34,7 @@ pub enum GameState {
     Loading,
     WorldSpawn,
     FactoryPlacement,
+    PawnSpawn,
     Main,
     Paused,
 }
@@ -44,6 +45,7 @@ pub enum Input {
     Zoom,
     Select,
     Debug,
+    Pause,
 }
 
 fn main() {
@@ -67,7 +69,14 @@ fn main() {
                 }),
             GameAssets,
             #[cfg(debug_assertions)]
-            FilterQueryInspectorPlugin::<With<pawn::components::Pawn>>::default(),
+            FilterQueryInspectorPlugin::<(
+                With<pawn::components::Pawn>,
+                With<
+                    pawn::components::pawn_status::PawnStatus<
+                        pawn::components::pawn_status::Moving,
+                    >,
+                >,
+            )>::default(),
         ))
         .add_plugins(InputManagerPlugin::<Input>::default())
         .add_plugins((
@@ -78,13 +87,20 @@ fn main() {
             navmesh::NavmeshPlugin,
         ))
         .add_systems(OnEnter(GameState::WorldSpawn), build_map)
-        .add_systems(Update, update_cursor_position)
         .add_systems(
             Update,
             (
-                camera_interactions.run_if(
-                    in_state(GameState::Main).or_else(in_state(GameState::FactoryPlacement)),
-                ),
+                update_cursor_position,
+                toggle_paused
+                    .run_if(in_state(GameState::Main).or_else(in_state(GameState::Paused))),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                camera_interactions.run_if(in_state(GameState::Main).or_else(
+                    in_state(GameState::FactoryPlacement).or_else(in_state(GameState::Paused)),
+                )),
                 selection_gizmo.after(camera_interactions),
             ),
         )
@@ -182,6 +198,7 @@ pub fn build_map(
                 )
                 .insert(MouseButton::Left, Input::Select)
                 .insert(KeyCode::Grave, Input::Debug)
+                .insert(KeyCode::Escape, Input::Pause)
                 .build(),
             ..default()
         },
@@ -494,5 +511,28 @@ fn selection_gizmo(mut gizmos: Gizmos, camera_metadata: Query<&CameraMetadata, W
         let color = Color::WHITE;
 
         gizmos.rect_2d(position.truncate(), 0., size.truncate(), color);
+    }
+}
+
+fn toggle_paused(
+    mut change_game_state: ResMut<NextState<GameState>>,
+    game_state: Res<State<GameState>>,
+    input: Query<&ActionState<Input>>,
+) {
+    let Ok(input) = input.get_single() else {
+        return;
+    };
+
+    if input.just_pressed(Input::Pause) {
+        match game_state.get() {
+            GameState::Paused => change_game_state.set(GameState::Main),
+            GameState::Main => change_game_state.set(GameState::Paused),
+            unknown_state => {
+                error!(
+                    "Unexpected game state when toggling pause: {:?}",
+                    unknown_state
+                );
+            }
+        }
     }
 }

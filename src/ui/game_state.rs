@@ -10,14 +10,9 @@ impl Plugin for GameStateUIPlugin {
         app.add_systems(OnEnter(GameState::Main), game_state_ui)
             .add_systems(
                 Update,
-                (
-                    (update_resource_counter, update_pawn_counter).run_if(
-                        in_state(GameState::Main).and_then(resource_changed::<GameResources>()),
-                    ),
-                    // update_pawn_counter.run_if(
-                    //     in_state(GameState::Main).and_then(resource_changed::<GameResources>()),
-                    // ),
-                ),
+                ((update_resource_counter, update_pawn_counter).run_if(
+                    in_state(GameState::Main).and_then(resource_changed::<GameResources>()),
+                ),),
             )
             .add_systems(
                 Update,

@@ -113,6 +113,17 @@ pub mod work_order {
                 fn clear_work_order(&mut self) -> &mut Self;
             }
 
+            pub trait AddWorkOrder {
+                fn add_work_order<T: 'static + OrderItem>(&mut self, order: T) -> &mut Self;
+            }
+
+            impl AddWorkOrder for EntityCommands<'_, '_, '_> {
+                fn add_work_order<T: 'static + OrderItem>(&mut self, order: T) -> &mut Self {
+                    self.clear_work_order();
+                    self.try_insert(WorkOrder(Box::new(order)))
+                }
+            }
+
             impl ClearWorkOrder for EntityCommands<'_, '_, '_> {
                 fn clear_work_order(&mut self) -> &mut Self {
                     $(
@@ -121,21 +132,16 @@ pub mod work_order {
                     self
                 }
             }
-
-            pub fn register_trait_queryables(app: &mut App) {
-                use bevy_trait_query::RegisterExt;
-                $(
-                    app.register_component_as::<dyn OrderItem, $name>();
-                )*
-            }
         };
     }
 
-    #[bevy_trait_query::queryable]
-    pub trait OrderItem {}
+    pub trait OrderItem: Sync + Send {}
 
     #[derive(Component)]
-    pub struct WorkOrder<T: OrderItem>(pub T);
+    pub struct WorkOrder<T: OrderItem + ?Sized>(pub Box<T>);
+
+    #[derive(Component)]
+    pub struct PrototypeWorkOrder<T: OrderItem + ?Sized>(pub Box<T>);
 
     work_orders!(
         struct MineStone {

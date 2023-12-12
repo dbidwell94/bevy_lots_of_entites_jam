@@ -1,7 +1,7 @@
 pub mod components;
 mod systems;
 
-use self::components::work_order::{BuildItem, WorkOrder};
+use self::components::work_order::{self, BuildItem, PrototypeWorkOrder, WorkOrder};
 use crate::GameState;
 use bevy::prelude::*;
 use std::collections::VecDeque;
@@ -20,9 +20,9 @@ impl Plugin for PawnPlugin {
     fn build(&self, app: &mut App) {
         // register trait queryables
         components::pawn_status::register_trait_queryables(app);
-        components::work_order::register_trait_queryables(app);
+        // components::work_order::register_trait_queryables(app);
 
-        app.add_systems(OnEnter(GameState::Main), systems::initial_pawn_spawn)
+        app.add_systems(OnEnter(GameState::PawnSpawn), systems::initial_pawn_spawn)
             .init_resource::<WorkQueue>()
             .init_resource::<EnemyWave>()
             .add_event::<SpawnPawnRequestEvent>()
@@ -96,6 +96,7 @@ impl Plugin for PawnPlugin {
 #[derive(Resource, Default)]
 pub struct WorkQueue {
     pub build_queue: VecDeque<WorkOrder<BuildItem>>,
+    pub work_queue: VecDeque<PrototypeWorkOrder<dyn work_order::OrderItem>>,
 }
 
 #[derive(Event, Debug)]
