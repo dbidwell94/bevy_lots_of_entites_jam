@@ -45,20 +45,24 @@ pub struct CarriedResources(pub usize);
 pub mod pawn_status {
     use bevy::{ecs::system::EntityCommands, prelude::*};
 
-    pub trait ClearStatus {
-        fn clear_status(&mut self) -> &mut Self;
-    }
-
-    impl ClearStatus for EntityCommands<'_, '_, '_> {
-        fn clear_status(&mut self) -> &mut Self {
-            self.remove::<PawnStatus<Idle>>()
-                .remove::<PawnStatus<Pathfinding>>()
-                .remove::<PawnStatus<PathfindingError>>()
-                .remove::<PawnStatus<Moving>>()
-                .remove::<PawnStatus<Mining>>()
-                .remove::<PawnStatus<Attacking>>();
-
-            self
+    macro_rules! pawn_status {
+        ($($name:ident),*) => {
+            $(
+                #[derive(Component)]
+                pub struct $name;
+                impl Status for $name {}
+            )*
+            pub trait ClearStatus {
+                fn clear_status(&mut self) -> &mut Self;
+            }
+            impl ClearStatus for EntityCommands<'_, '_, '_> {
+                fn clear_status(&mut self) -> &mut Self {
+                    $(
+                        self.remove::<PawnStatus<$name>>();
+                    )*
+                    self
+                }
+            }
         }
     }
 
@@ -67,47 +71,50 @@ pub mod pawn_status {
     #[derive(Component)]
     pub struct PawnStatus<T: Component + Status>(pub T);
 
-    #[derive(Component)]
-    pub struct Idle;
-    impl Status for Idle {}
-
-    #[derive(Component)]
-    pub struct Pathfinding;
-    impl Status for Pathfinding {}
-
-    #[derive(Component)]
-    pub struct PathfindingError;
-    impl Status for PathfindingError {}
-
-    #[derive(Component)]
-    pub struct Moving;
-    impl Status for Moving {}
-
-    #[derive(Component)]
-    pub struct Mining;
-    impl Status for Mining {}
-
-    #[derive(Component)]
-    pub struct Attacking;
-    impl Status for Attacking {}
+    pawn_status!(
+        Idle,
+        Pathfinding,
+        PathfindingError,
+        Moving,
+        Mining,
+        Attacking
+    );
 }
 
 pub mod work_order {
     use bevy::{ecs::system::EntityCommands, prelude::*};
 
-    pub trait ClearWorkOrder {
-        fn clear_work_order(&mut self) -> &mut Self;
-    }
+    macro_rules! work_orders {
+        (
+            $(struct $name: ident {
+            $(
+                $field: ident: $ty: ty
+            ),* $(,)?
+            }),*
+    ) => {
+            $(
+                #[derive(Component)]
+                pub struct $name {
+                    $(
+                        pub $field: $ty
+                    ),*
+                }
+                impl OrderItem for $name {}
+            )*
 
-    impl ClearWorkOrder for EntityCommands<'_, '_, '_> {
-        fn clear_work_order(&mut self) -> &mut Self {
-            self.remove::<WorkOrder<MineStone>>()
-                .remove::<WorkOrder<ReturnToFactory>>()
-                .remove::<WorkOrder<BuildItem>>()
-                .remove::<WorkOrder<AttackPawn>>();
+            pub trait ClearWorkOrder {
+                fn clear_work_order(&mut self) -> &mut Self;
+            }
 
-            self
-        }
+            impl ClearWorkOrder for EntityCommands<'_, '_, '_> {
+                fn clear_work_order(&mut self) -> &mut Self {
+                    $(
+                        self.remove::<WorkOrder<$name>>();
+                    )*
+                    self
+                }
+            }
+        };
     }
 
     pub trait OrderItem {}
@@ -115,25 +122,17 @@ pub mod work_order {
     #[derive(Component)]
     pub struct WorkOrder<T: Component + OrderItem>(pub T);
 
-    #[derive(Component)]
-    pub struct MineStone {
-        pub stone_entity: Entity,
-    }
-    impl OrderItem for MineStone {}
-
-    #[derive(Component)]
-    pub struct ReturnToFactory;
-    impl OrderItem for ReturnToFactory {}
-
-    #[derive(Component)]
-    pub struct BuildItem(pub Entity);
-    impl OrderItem for BuildItem {}
-
-    #[derive(Component)]
-    pub struct AttackPawn(pub Entity);
-    impl OrderItem for AttackPawn {}
-
-    #[derive(Component)]
-    pub struct AttackFactory;
-    impl OrderItem for AttackFactory {}
+    work_orders!(
+        struct MineStone {
+            stone_entity: Entity,
+        },
+        struct ReturnToFactory {},
+        struct BuildItem {
+            item_entity: Entity,
+        },
+        struct AttackPawn {
+            pawn_entity: Entity,
+        },
+        struct AttackFactory {}
+    );
 }

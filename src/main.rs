@@ -13,6 +13,7 @@ use assets::{DirtTile, GameAssets, GroundBase};
 use bevy::{asset::AssetMetaCheck, prelude::*, window::PrimaryWindow};
 use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 use bevy_easings::*;
+use bevy_inspector_egui::quick::FilterQueryInspectorPlugin;
 use leafwing_input_manager::{axislike::VirtualAxis, prelude::*};
 use noisy_bevy::simplex_noise_2d_seeded;
 use rand::prelude::*;
@@ -65,6 +66,7 @@ fn main() {
                     ..default()
                 }),
             GameAssets,
+            FilterQueryInspectorPlugin::<With<pawn::components::Pawn>>::default(),
         ))
         .add_plugins(InputManagerPlugin::<Input>::default())
         .add_plugins((

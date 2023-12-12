@@ -43,7 +43,7 @@ fn spawn_pawn_in_random_location(
     let y = factory_transform.translation().y + random_angle.sin() * radius;
 
     let pawn_entity = commands
-        .spawn(PawnBundle {
+        .spawn((PawnBundle {
             pawn: Pawn {
                 move_path: VecDeque::new(),
                 move_to: None,
@@ -69,7 +69,7 @@ fn spawn_pawn_in_random_location(
             },
             pawn_status: PawnStatus(Idle),
             resources: CarriedResources(0),
-        })
+        },))
         .id();
 
     commands
@@ -160,7 +160,7 @@ pub fn work_idle_pawns(
                 .entity(entity)
                 .clear_status()
                 .clear_work_order()
-                .try_insert(WorkOrder(work_order::ReturnToFactory))
+                .try_insert(WorkOrder(work_order::ReturnToFactory {}))
                 .try_insert(PawnStatus(pawn_status::Pathfinding));
 
             let grid_location = transform.translation.world_pos_to_tile();
@@ -401,7 +401,7 @@ pub fn mine_stone(
                 .clear_work_order()
                 .clear_status()
                 .try_insert(PawnStatus(pawn_status::Idle))
-                .try_insert(WorkOrder(work_order::ReturnToFactory));
+                .try_insert(WorkOrder(work_order::ReturnToFactory {}));
 
             continue;
         }
@@ -627,7 +627,9 @@ pub fn pawn_search_for_enemies(
                 .entity(pawn_entity)
                 .clear_work_order()
                 .clear_status()
-                .try_insert(WorkOrder(work_order::AttackPawn(enemy_entity)))
+                .try_insert(WorkOrder(work_order::AttackPawn {
+                    pawn_entity: enemy_entity,
+                }))
                 .try_insert(PawnStatus(pawn_status::Pathfinding));
 
             pathfinding_event_writer.send(PathfindRequest {
@@ -769,7 +771,7 @@ pub fn enemy_search_for_factory(
             .clear_status()
             .clear_work_order()
             .try_insert(PawnStatus(pawn_status::Pathfinding))
-            .try_insert(WorkOrder(work_order::AttackFactory));
+            .try_insert(WorkOrder(work_order::AttackFactory {}));
     }
 }
 
@@ -813,7 +815,7 @@ pub fn enemy_search_for_pawns(
                 .entity(enemy_entity)
                 .clear_work_order()
                 .clear_status()
-                .try_insert(WorkOrder(work_order::AttackPawn(pawn_entity)))
+                .try_insert(WorkOrder(work_order::AttackPawn { pawn_entity }))
                 .try_insert(PawnStatus(pawn_status::Pathfinding));
 
             pathfinding_event_writer.send(PathfindRequest {
@@ -839,8 +841,14 @@ pub fn update_pathfinding_to_pawn(
     q_all_pawns: Query<&GlobalTransform, With<Pawn>>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
-    for (entity, WorkOrder(work_order::AttackPawn(other_entity)), transform, pawn) in
-        &q_all_attacking_pawns
+    for (
+        entity,
+        WorkOrder(work_order::AttackPawn {
+            pawn_entity: other_entity,
+        }),
+        transform,
+        pawn,
+    ) in &q_all_attacking_pawns
     {
         if let Ok(other_transform) = q_all_pawns.get(*other_entity) {
             let grid_location = transform.translation().world_pos_to_tile();
@@ -908,7 +916,14 @@ pub fn attack_pawn(
     let mut queued_attacks: Vec<AttackMetadata> = Vec::new();
     let mut destroyed_pawns = HashSet::<Entity>::default();
 
-    for (entity, WorkOrder(work_order::AttackPawn(other_entity)), pawn) in &q_all_attacking_pawns {
+    for (
+        entity,
+        WorkOrder(work_order::AttackPawn {
+            pawn_entity: other_entity,
+        }),
+        pawn,
+    ) in &q_all_attacking_pawns
+    {
         if q_all_attacking_enemies
             .get(*other_entity)
             .or(q_all_attacking_pawns.get(*other_entity))
@@ -933,7 +948,13 @@ pub fn attack_pawn(
             attacking_enemy: true,
         });
     }
-    for (entity, WorkOrder(work_order::AttackPawn(other_entity)), pawn) in &q_all_attacking_enemies
+    for (
+        entity,
+        WorkOrder(work_order::AttackPawn {
+            pawn_entity: other_entity,
+        }),
+        pawn,
+    ) in &q_all_attacking_enemies
     {
         if q_all_attacking_enemies
             .get(*other_entity)

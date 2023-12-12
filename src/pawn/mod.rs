@@ -1,4 +1,4 @@
-mod components;
+pub mod components;
 mod systems;
 
 use self::components::work_order::{BuildItem, WorkOrder};
