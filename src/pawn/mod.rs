@@ -27,7 +27,7 @@ impl Plugin for PawnPlugin {
                         .after(systems::return_to_factory)
                         .after(systems::mine_stone),
                     systems::listen_for_spawn_pawn_event.run_if(in_state(GameState::Main)),
-                    systems::debug_pathfinding_error,
+                    systems::retry_pathfinding,
                 ),
             )
             .add_systems(
@@ -40,7 +40,6 @@ impl Plugin for PawnPlugin {
                     systems::update_pathfinding_to_pawn.after(systems::enemy_search_for_pawns),
                     systems::pawn_search_for_enemies.after(systems::update_pathfinding_to_pawn),
                     systems::attack_pawn.after(systems::pawn_search_for_enemies),
-                    // systems::check_target_still_exists.after(systems::attack_pawn),
                 )
                     .run_if(in_state(GameState::Main)),
             );
@@ -65,7 +64,7 @@ pub struct EnemyWave {
 impl Default for EnemyWave {
     fn default() -> Self {
         Self {
-            wave: 5,
+            wave: 0,
             enemy_count_multiplier: 1,
             enemy_spawn_timer: Timer::from_seconds(30.0, TimerMode::Repeating),
         }

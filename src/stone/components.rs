@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-#[derive(Component, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StoneKind {
     CappedRock,
     RedRock,

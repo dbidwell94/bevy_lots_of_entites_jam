@@ -1,11 +1,14 @@
 use super::{Stone, StoneKind};
 use crate::{
-    assets::{self, rocks::RockAsset},
-    utils::TranslationHelper,
+    assets::rocks::{RockAsset, RockCollection},
+    boxed,
+    utils::*,
     GameState, WorldNoise, PERLIN_DIVIDER, SIZE, TILE_SIZE,
 };
 use bevy::prelude::*;
 use noisy_bevy::simplex_noise_2d_seeded;
+
+const MAX_STONE_PER_TILE: usize = 1000;
 
 type StoneGrid = [[Option<StoneKind>; SIZE]; SIZE];
 
@@ -52,28 +55,20 @@ fn get_neighbor_stone_kind(grid: &StoneGrid, x: usize, y: usize) -> Option<Stone
 
 fn stone_kind_to_resource<'a>(
     stone_kind: StoneKind,
-    capped_rock: &'a Res<assets::rocks::CappedRock>,
-    red_rock: &'a Res<assets::rocks::RedRock>,
-    salt_rock: &'a Res<assets::rocks::SaltRock>,
-    stone_rock: &'a Res<assets::rocks::StoneRock>,
-    tan_rock: &'a Res<assets::rocks::TanRock>,
+    rock_collection: &'a Res<RockCollection>,
 ) -> Box<&'a dyn RockAsset> {
     match stone_kind {
-        StoneKind::CappedRock => Box::new(capped_rock.as_ref()),
-        StoneKind::RedRock => Box::new(red_rock.as_ref()),
-        StoneKind::SaltRock => Box::new(salt_rock.as_ref()),
-        StoneKind::StoneRock => Box::new(stone_rock.as_ref()),
-        StoneKind::TanRock => Box::new(tan_rock.as_ref()),
+        StoneKind::CappedRock => boxed!(&rock_collection.capped_rock),
+        StoneKind::RedRock => boxed!(&rock_collection.red_rock),
+        StoneKind::SaltRock => boxed!(&rock_collection.salt_rock),
+        StoneKind::StoneRock => boxed!(&rock_collection.stone_rock),
+        StoneKind::TanRock => boxed!(&rock_collection.tan_rock),
     }
 }
 
 pub fn spawn_stone_tiles(
     mut commands: Commands,
-    capped_rock: Res<assets::rocks::CappedRock>,
-    red_rock: Res<assets::rocks::RedRock>,
-    salt_rock: Res<assets::rocks::SaltRock>,
-    stone_rock: Res<assets::rocks::StoneRock>,
-    tan_rock: Res<assets::rocks::TanRock>,
+    rock_collection: Res<RockCollection>,
     world_noise: Res<WorldNoise>,
     mut game_state: ResMut<NextState<GameState>>,
     mut navmesh: ResMut<crate::navmesh::components::Navmesh>,
@@ -102,38 +97,27 @@ pub fn spawn_stone_tiles(
 
                 let rock: &dyn RockAsset = if noisy_bevy_value < -0.5 {
                     stone_kind = StoneKind::CappedRock;
-                    capped_rock.as_ref()
+                    &rock_collection.capped_rock
                 } else if noisy_bevy_value >= -0.5 && noisy_bevy_value < -0.25 {
                     stone_kind = StoneKind::RedRock;
-                    red_rock.as_ref()
+                    &rock_collection.red_rock
                 } else if noisy_bevy_value >= -0.25 && noisy_bevy_value < 0. {
                     stone_kind = StoneKind::SaltRock;
-                    salt_rock.as_ref()
+                    &rock_collection.salt_rock
                 } else if noisy_bevy_value >= 0. && noisy_bevy_value < 0.25 {
                     stone_kind = StoneKind::StoneRock;
-                    stone_rock.as_ref()
+                    &rock_collection.stone_rock
                 } else {
                     stone_kind = StoneKind::TanRock;
-                    tan_rock.as_ref()
+                    &rock_collection.tan_rock
                 };
 
                 let (rock, stone_kind) = get_neighbor_stone_kind(&stone_kinds, x, y)
-                    .map(|kind| {
-                        (
-                            stone_kind_to_resource(
-                                kind,
-                                &capped_rock,
-                                &red_rock,
-                                &salt_rock,
-                                &stone_rock,
-                                &tan_rock,
-                            ),
-                            kind,
-                        )
-                    })
+                    .map(|kind| (stone_kind_to_resource(kind, &rock_collection), kind))
                     .unwrap_or((Box::new(rock), stone_kind));
 
                 stone_kinds[x][y] = Some(stone_kind);
+                
 
                 let stone_entity = commands
                     .spawn((
@@ -154,7 +138,7 @@ pub fn spawn_stone_tiles(
                         },
                         stone_kind,
                         Stone {
-                            remaining_resources: 150,
+                            remaining_resources: MAX_STONE_PER_TILE,
                         },
                     ))
                     .id();
@@ -166,4 +150,31 @@ pub fn spawn_stone_tiles(
     }
 
     game_state.set(GameState::FactoryPlacement);
+}
+
+pub fn update_stone_sprite(
+    mut q_stone: Query<(&Stone, &StoneKind, &mut Handle<Image>, &mut Sprite), Changed<Stone>>,
+    rock_collection: Res<RockCollection>,
+) {
+    for (stone, kind, mut image, mut sprite) in &mut q_stone {
+        let stone_resource = stone_kind_to_resource(*kind, &rock_collection);
+        let rock_image = if stone.remaining_resources < 250 {
+            sprite.custom_size = Some(Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 0.5));
+            stone_resource.get_small()
+        } else if stone.remaining_resources < 350 {
+            sprite.custom_size = Some(Vec2::new(TILE_SIZE * 0.7, TILE_SIZE * 0.7));
+            stone_resource.get_medium_small()
+        } else if stone.remaining_resources < 500 {
+            sprite.custom_size = Some(Vec2::new(TILE_SIZE * 0.85, TILE_SIZE * 0.85));
+            stone_resource.get_medium()
+        } else if stone.remaining_resources < 750 {
+            sprite.custom_size = Some(Vec2::new(TILE_SIZE * 0.95, TILE_SIZE * 0.95));
+            stone_resource.get_medium_large()
+        } else {
+            sprite.custom_size = Some(Vec2::new(TILE_SIZE, TILE_SIZE));
+            stone_resource.get_large()
+        };
+
+        *image = rock_image;
+    }
 }

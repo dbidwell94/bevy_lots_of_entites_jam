@@ -13,6 +13,7 @@ pub struct Pawn {
     pub animation_timer: Timer,
     pub mine_timer: Timer,
     pub search_timer: Timer,
+    pub retry_pathfinding_timer: Timer,
     pub moving: bool,
 }
 

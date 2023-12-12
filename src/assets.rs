@@ -7,7 +7,7 @@ pub mod rocks {
     use bevy::prelude::*;
     use bevy_asset_loader::prelude::*;
 
-    use crate::{stone::StoneKind, GameState};
+    use crate::GameState;
 
     pub struct RockPlugin;
 
@@ -17,11 +17,55 @@ pub mod rocks {
                 .add_collection_to_loading_state::<_, RedRock>(GameState::Loading)
                 .add_collection_to_loading_state::<_, SaltRock>(GameState::Loading)
                 .add_collection_to_loading_state::<_, StoneRock>(GameState::Loading)
-                .add_collection_to_loading_state::<_, TanRock>(GameState::Loading);
+                .add_collection_to_loading_state::<_, TanRock>(GameState::Loading)
+                .add_systems(
+                    Update,
+                    init_rock_collection
+                        .run_if(in_state(GameState::Loading))
+                        .run_if(not(resource_exists::<RockCollection>())),
+                );
         }
     }
 
-    #[derive(AssetCollection, Resource)]
+    fn init_rock_collection(world: &mut World) {
+        let Some(capped) = world.get_resource::<CappedRock>().map(|r| r.to_owned()) else {
+            return;
+        };
+        let Some(red) = world.get_resource::<RedRock>().map(|r| r.to_owned()) else {
+            return;
+        };
+        let Some(salt) = world.get_resource::<SaltRock>().map(|r| r.to_owned()) else {
+            return;
+        };
+        let Some(stone) = world.get_resource::<StoneRock>().map(|r| r.to_owned()) else {
+            return;
+        };
+        let Some(tan) = world.get_resource::<TanRock>().map(|r| r.to_owned()) else {
+            return;
+        };
+
+        let rock_collection = RockCollection {
+            capped_rock: capped,
+            red_rock: red,
+            salt_rock: salt,
+            stone_rock: stone,
+            tan_rock: tan,
+        };
+
+        world.insert_resource(rock_collection);
+        info!("Rock collection initialized");
+    }
+
+    #[derive(Resource)]
+    pub struct RockCollection {
+        pub capped_rock: CappedRock,
+        pub red_rock: RedRock,
+        pub salt_rock: SaltRock,
+        pub stone_rock: StoneRock,
+        pub tan_rock: TanRock,
+    }
+
+    #[derive(AssetCollection, Resource, Clone)]
     pub struct CappedRock {
         #[asset(path = "objects/rocks/capped/5.png")]
         pub large: Handle<Image>,
@@ -35,7 +79,7 @@ pub mod rocks {
         pub small: Handle<Image>,
     }
 
-    #[derive(AssetCollection, Resource)]
+    #[derive(AssetCollection, Resource, Clone)]
     pub struct RedRock {
         #[asset(path = "objects/rocks/red/5.png")]
         pub large: Handle<Image>,
@@ -49,7 +93,7 @@ pub mod rocks {
         pub small: Handle<Image>,
     }
 
-    #[derive(AssetCollection, Resource)]
+    #[derive(AssetCollection, Resource, Clone)]
     pub struct SaltRock {
         #[asset(path = "objects/rocks/salt/5.png")]
         pub large: Handle<Image>,
@@ -63,7 +107,7 @@ pub mod rocks {
         pub small: Handle<Image>,
     }
 
-    #[derive(AssetCollection, Resource)]
+    #[derive(AssetCollection, Resource, Clone)]
     pub struct StoneRock {
         #[asset(path = "objects/rocks/stone/5.png")]
         pub large: Handle<Image>,
@@ -77,7 +121,7 @@ pub mod rocks {
         pub small: Handle<Image>,
     }
 
-    #[derive(AssetCollection, Resource)]
+    #[derive(AssetCollection, Resource, Clone)]
     pub struct TanRock {
         #[asset(path = "objects/rocks/tan/5.png")]
         pub large: Handle<Image>,
@@ -97,7 +141,7 @@ pub mod rocks {
         fn get_medium(&self) -> Handle<Image>;
         fn get_medium_small(&self) -> Handle<Image>;
         fn get_small(&self) -> Handle<Image>;
-        fn get_stone_kind(&self) -> StoneKind;
+        fn get_stone_kind(&self) -> Handle<Image>;
     }
 
     impl RockAsset for CappedRock {
@@ -116,8 +160,8 @@ pub mod rocks {
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
         }
-        fn get_stone_kind(&self) -> StoneKind {
-            StoneKind::CappedRock
+        fn get_stone_kind(&self) -> Handle<Image> {
+            self.small.clone()
         }
     }
 
@@ -137,8 +181,8 @@ pub mod rocks {
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
         }
-        fn get_stone_kind(&self) -> StoneKind {
-            StoneKind::RedRock
+        fn get_stone_kind(&self) -> Handle<Image> {
+            self.small.clone()
         }
     }
 
@@ -158,8 +202,8 @@ pub mod rocks {
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
         }
-        fn get_stone_kind(&self) -> StoneKind {
-            StoneKind::SaltRock
+        fn get_stone_kind(&self) -> Handle<Image> {
+            self.small.clone()
         }
     }
 
@@ -179,8 +223,8 @@ pub mod rocks {
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
         }
-        fn get_stone_kind(&self) -> StoneKind {
-            StoneKind::StoneRock
+        fn get_stone_kind(&self) -> Handle<Image> {
+            self.small.clone()
         }
     }
 
@@ -200,8 +244,8 @@ pub mod rocks {
         fn get_small(&self) -> Handle<Image> {
             self.small.clone()
         }
-        fn get_stone_kind(&self) -> StoneKind {
-            StoneKind::TanRock
+        fn get_stone_kind(&self) -> Handle<Image> {
+            self.small.clone()
         }
     }
 }

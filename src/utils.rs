@@ -63,3 +63,10 @@ impl TranslationHelper for Vec2 {
         )
     }
 }
+
+#[macro_export]
+macro_rules! boxed {
+    ($expr: expr) => {
+        Box::new($expr)
+    };
+}
