@@ -63,9 +63,16 @@ pub mod pawn_status {
                     self
                 }
             }
+            pub fn register_trait_queryables(app: &mut App) {
+                use bevy_trait_query::RegisterExt;
+                $(
+                    app.register_component_as::<dyn Status, $name>();
+                )*
+            }
         }
     }
 
+    #[bevy_trait_query::queryable]
     pub trait Status {}
 
     #[derive(Component)]
@@ -114,13 +121,21 @@ pub mod work_order {
                     self
                 }
             }
+
+            pub fn register_trait_queryables(app: &mut App) {
+                use bevy_trait_query::RegisterExt;
+                $(
+                    app.register_component_as::<dyn OrderItem, $name>();
+                )*
+            }
         };
     }
 
+    #[bevy_trait_query::queryable]
     pub trait OrderItem {}
 
     #[derive(Component)]
-    pub struct WorkOrder<T: Component + OrderItem>(pub T);
+    pub struct WorkOrder<T: OrderItem>(pub T);
 
     work_orders!(
         struct MineStone {

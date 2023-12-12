@@ -66,6 +66,7 @@ fn main() {
                     ..default()
                 }),
             GameAssets,
+            #[cfg(debug_assertions)]
             FilterQueryInspectorPlugin::<With<pawn::components::Pawn>>::default(),
         ))
         .add_plugins(InputManagerPlugin::<Input>::default())

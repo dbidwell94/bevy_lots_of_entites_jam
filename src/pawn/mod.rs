@@ -6,40 +6,87 @@ use crate::GameState;
 use bevy::prelude::*;
 use std::collections::VecDeque;
 
+#[derive(SystemSet, Hash, Debug, Clone, Eq, PartialEq)]
+pub enum PawnSystemSet {
+    Work,
+    Attack,
+    Pathfind,
+    Move,
+}
+
 pub struct PawnPlugin;
 
 impl Plugin for PawnPlugin {
     fn build(&self, app: &mut App) {
+        // register trait queryables
+        components::pawn_status::register_trait_queryables(app);
+        components::work_order::register_trait_queryables(app);
+
         app.add_systems(OnEnter(GameState::Main), systems::initial_pawn_spawn)
             .init_resource::<WorkQueue>()
             .init_resource::<EnemyWave>()
             .add_event::<SpawnPawnRequestEvent>()
+            // setup systems scheduling
+            .configure_sets(
+                Update,
+                (
+                    PawnSystemSet::Work,
+                    PawnSystemSet::Attack,
+                    PawnSystemSet::Pathfind,
+                    PawnSystemSet::Move,
+                )
+                    .chain()
+                    .run_if(in_state(GameState::Main)),
+            )
+            // add work systems
             .add_systems(
                 Update,
                 (
-                    systems::listen_for_pathfinding_answers.after(systems::work_idle_pawns),
-                    systems::move_pawn.after(systems::listen_for_pathfinding_answers),
-                    systems::update_health_ui,
-                    systems::update_pawn_animation,
+                    systems::work_idle_pawns,
                     systems::mine_stone,
                     systems::return_to_factory,
-                    systems::work_idle_pawns
-                        .after(systems::return_to_factory)
-                        .after(systems::mine_stone),
-                    systems::listen_for_spawn_pawn_event.run_if(in_state(GameState::Main)),
-                    systems::retry_pathfinding,
-                ),
+                )
+                    .chain()
+                    .in_set(PawnSystemSet::Work),
             )
+            // add attack systems
             .add_systems(
                 Update,
                 (
-                    systems::tick_timers,
+                    systems::enemy_search_for_factory,
+                    systems::enemy_search_for_pawns,
+                    systems::pawn_search_for_enemies,
+                    systems::attack_pawn,
+                )
+                    .chain()
+                    .in_set(PawnSystemSet::Attack),
+            )
+            // add pathfinding systems
+            .add_systems(
+                Update,
+                (
+                    systems::retry_pathfinding,
+                    systems::update_pathfinding_to_pawn,
+                )
+                    .chain()
+                    .in_set(PawnSystemSet::Pathfind),
+            )
+            // add movement systems
+            .add_systems(
+                Update,
+                (systems::listen_for_pathfinding_answers, systems::move_pawn)
+                    .chain()
+                    .in_set(PawnSystemSet::Move),
+            )
+            // add general systems
+            .add_systems(
+                Update,
+                (
+                    systems::update_health_ui,
+                    systems::update_pawn_animation,
+                    systems::listen_for_spawn_pawn_event,
                     systems::spawn_enemy_pawns,
-                    systems::enemy_search_for_factory.after(systems::spawn_enemy_pawns),
-                    systems::enemy_search_for_pawns.after(systems::enemy_search_for_factory),
-                    systems::update_pathfinding_to_pawn.after(systems::enemy_search_for_pawns),
-                    systems::pawn_search_for_enemies.after(systems::update_pathfinding_to_pawn),
-                    systems::attack_pawn.after(systems::pawn_search_for_enemies),
+                    systems::tick_timers,
                 )
                     .run_if(in_state(GameState::Main)),
             );
