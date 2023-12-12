@@ -319,7 +319,7 @@ fn spawn_world_tiles(
 
             let nav_tile = &mut navmesh.0[x][y];
 
-            if seed_value >= &DIRT_CUTOFF && seed_value < &GRASS_CUTOFF {
+            if (&DIRT_CUTOFF..&GRASS_CUTOFF).contains(&seed_value) {
                 // Dirt
                 let dirt_entity = commands
                     .spawn((
@@ -425,7 +425,7 @@ fn camera_interactions(
             return;
         };
         let Some(world_pos) = camera
-            .viewport_to_world(global_camera_transform, cursor_position.clone())
+            .viewport_to_world(global_camera_transform, cursor_position)
             .map(|ray| ray.origin.truncate())
         else {
             return;
@@ -461,7 +461,7 @@ fn update_cursor_position(
     };
 
     let world_pos = camera
-        .viewport_to_world(camera_transform, cursor_position.clone())
+        .viewport_to_world(camera_transform, cursor_position)
         .map(|ray| ray.origin.truncate());
 
     cursor_world_position.0 = world_pos.map(|v| {

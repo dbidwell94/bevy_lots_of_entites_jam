@@ -88,7 +88,7 @@ pub fn get_pathing(request: PathfindRequest, navmesh: &Res<Navmesh>) -> Option<V
                 .map(|(x, y)| ((*x, *y), 0)) // Modify this line
                 .collect::<Vec<_>>();
 
-            return neighbors;
+            neighbors
         },
         |&(x, y)| {
             (Vec2::new(x as f32, y as f32) - Vec2::new(end_x as f32, end_y as f32)).length() as i32
@@ -144,7 +144,7 @@ pub fn listen_for_pathfinding_requests(
                     .map(|(x, y)| (UsizeVec { x: *x, y: *y }, 0)) // Modify this line
                     .collect::<Vec<_>>();
 
-                return neighbors;
+                neighbors
             },
             |&tile| {
                 (Vec2::new(tile.x as f32, tile.y as f32) - Vec2::new(end_x as f32, end_y as f32))

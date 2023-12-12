@@ -36,10 +36,10 @@ pub fn c_pixel_text(_: &AssetServer, tb: &mut TextBundle) {
 pub fn text_style(
     font_size: Option<f32>,
 ) -> impl Fn(&bevy::prelude::AssetServer, &mut bevy::prelude::TextStyle) {
-    return move |assets: &AssetServer, ts: &mut TextStyle| {
+    move |assets: &AssetServer, ts: &mut TextStyle| {
         ts.font = assets.load("pixel.ttf");
         ts.font_size = font_size.unwrap_or(40.0);
-    };
+    }
 }
 
 pub fn top_right_anchor(node: &mut NodeBundle) {
@@ -71,7 +71,7 @@ pub fn bottom_center_anchor(node: &mut NodeBundle) {
 pub fn spawn_menu_button(
     image_location: Option<&'static str>,
 ) -> impl Fn(&AssetServer, &mut ButtonBundle) {
-    return move |assets: &AssetServer, b: &mut ButtonBundle| {
+    move |assets: &AssetServer, b: &mut ButtonBundle| {
         b.image = UiImage {
             texture: assets.load(image_location.unwrap_or_default()),
             ..default()
@@ -85,5 +85,5 @@ pub fn spawn_menu_button(
             ..default()
         };
         b.border_color = BorderColor(Color::WHITE);
-    };
+    }
 }

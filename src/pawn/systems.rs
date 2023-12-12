@@ -106,7 +106,7 @@ pub fn initial_pawn_spawn(
             &mut commands,
             &pawn_res,
             &mut game_resources,
-            &factory_transform,
+            factory_transform,
             &navmesh,
         );
     }
@@ -291,12 +291,10 @@ pub fn move_pawn(
                 } else {
                     *facing = CharacterFacing::Left;
                 }
+            } else if direction.y > 0. {
+                *facing = CharacterFacing::Backward;
             } else {
-                if direction.y > 0. {
-                    *facing = CharacterFacing::Backward;
-                } else {
-                    *facing = CharacterFacing::Forward;
-                }
+                *facing = CharacterFacing::Forward;
             }
         }
         if (path - current_grid).length() < 0.2 {
@@ -531,7 +529,7 @@ pub fn listen_for_spawn_pawn_event(
             &mut commands,
             &pawn_res,
             &mut game_resources,
-            &factory_transform,
+            factory_transform,
             &navmesh,
         );
     }

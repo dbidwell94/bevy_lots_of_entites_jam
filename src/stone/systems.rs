@@ -1,7 +1,6 @@
 use super::{Stone, StoneKind};
 use crate::{
     assets::rocks::{RockAsset, RockCollection},
-    boxed,
     utils::*,
     GameState, WorldNoise, PERLIN_DIVIDER, SIZE, TILE_SIZE,
 };
@@ -56,13 +55,13 @@ fn get_neighbor_stone_kind(grid: &StoneGrid, x: usize, y: usize) -> Option<Stone
 fn stone_kind_to_resource<'a>(
     stone_kind: StoneKind,
     rock_collection: &'a Res<RockCollection>,
-) -> Box<&'a dyn RockAsset> {
+) -> &'a dyn RockAsset {
     match stone_kind {
-        StoneKind::CappedRock => boxed!(&rock_collection.capped_rock),
-        StoneKind::RedRock => boxed!(&rock_collection.red_rock),
-        StoneKind::SaltRock => boxed!(&rock_collection.salt_rock),
-        StoneKind::StoneRock => boxed!(&rock_collection.stone_rock),
-        StoneKind::TanRock => boxed!(&rock_collection.tan_rock),
+        StoneKind::CappedRock => &rock_collection.capped_rock,
+        StoneKind::RedRock => &rock_collection.red_rock,
+        StoneKind::SaltRock => &rock_collection.salt_rock,
+        StoneKind::StoneRock => &rock_collection.stone_rock,
+        StoneKind::TanRock => &rock_collection.tan_rock,
     }
 }
 
@@ -98,13 +97,13 @@ pub fn spawn_stone_tiles(
                 let rock: &dyn RockAsset = if noisy_bevy_value < -0.5 {
                     stone_kind = StoneKind::CappedRock;
                     &rock_collection.capped_rock
-                } else if noisy_bevy_value >= -0.5 && noisy_bevy_value < -0.25 {
+                } else if (-0.5..-0.25).contains(&noisy_bevy_value) {
                     stone_kind = StoneKind::RedRock;
                     &rock_collection.red_rock
-                } else if noisy_bevy_value >= -0.25 && noisy_bevy_value < 0. {
+                } else if (-0.25..0.).contains(&noisy_bevy_value) {
                     stone_kind = StoneKind::SaltRock;
                     &rock_collection.salt_rock
-                } else if noisy_bevy_value >= 0. && noisy_bevy_value < 0.25 {
+                } else if (0. ..0.25).contains(&noisy_bevy_value) {
                     stone_kind = StoneKind::StoneRock;
                     &rock_collection.stone_rock
                 } else {
@@ -114,10 +113,9 @@ pub fn spawn_stone_tiles(
 
                 let (rock, stone_kind) = get_neighbor_stone_kind(&stone_kinds, x, y)
                     .map(|kind| (stone_kind_to_resource(kind, &rock_collection), kind))
-                    .unwrap_or((Box::new(rock), stone_kind));
+                    .unwrap_or((rock, stone_kind));
 
                 stone_kinds[x][y] = Some(stone_kind);
-                
 
                 let stone_entity = commands
                     .spawn((
