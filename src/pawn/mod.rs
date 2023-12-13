@@ -21,14 +21,15 @@ impl Plugin for PawnPlugin {
         app.add_systems(OnEnter(GameState::PawnSpawn), systems::initial_pawn_spawn)
             .init_resource::<WorkQueue>()
             .init_resource::<EnemyWave>()
+            .register_type::<components::Pawn>()
             .add_event::<SpawnPawnRequestEvent>()
             // setup systems scheduling
             .configure_sets(
                 Update,
                 (
                     PawnSystemSet::Move,
-                    PawnSystemSet::Attack,
                     PawnSystemSet::Work,
+                    PawnSystemSet::Attack,
                     PawnSystemSet::Pathfind,
                 )
                     .chain()
@@ -49,7 +50,11 @@ impl Plugin for PawnPlugin {
             // add attack systems
             .add_systems(
                 Update,
-                (systems::update_pathfinding_to_pawn, systems::attack_pawn)
+                (
+                    systems::search_for_attack_target_pawn,
+                    systems::attack_pawn,
+                    systems::update_pathfinding_to_pawn,
+                )
                     .chain()
                     .in_set(PawnSystemSet::Attack),
             )
@@ -58,7 +63,6 @@ impl Plugin for PawnPlugin {
                 Update,
                 (
                     systems::retry_pathfinding,
-                    systems::search_for_attack_target_pawn,
                     systems::enemy_search_for_factory,
                 )
                     .chain()

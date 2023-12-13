@@ -45,6 +45,7 @@ pub enum Input {
     Zoom,
     Select,
     Debug,
+    DebugSpawnPawn,
     Pause,
 }
 
@@ -193,6 +194,7 @@ pub fn build_map(
                 .insert(MouseButton::Left, Input::Select)
                 .insert(KeyCode::Grave, Input::Debug)
                 .insert(KeyCode::Escape, Input::Pause)
+                .insert(KeyCode::Numpad0, Input::DebugSpawnPawn)
                 .build(),
             ..default()
         },
