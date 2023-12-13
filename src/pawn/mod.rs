@@ -8,9 +8,11 @@ use std::collections::VecDeque;
 
 #[derive(SystemSet, Hash, Debug, Clone, Eq, PartialEq)]
 pub enum PawnSystemSet {
+    First,
     Move,
     Work,
     Attack,
+    Last,
 }
 
 pub struct PawnPlugin;
@@ -26,13 +28,15 @@ impl Plugin for PawnPlugin {
             .configure_sets(
                 Update,
                 (
+                    PawnSystemSet::First,
                     PawnSystemSet::Move,
                     PawnSystemSet::Work,
                     PawnSystemSet::Attack,
+                    PawnSystemSet::Last,
                 )
                     .chain()
                     .run_if(in_state(GameState::Main))
-                    .after(crate::navmesh::systems::listen_for_pathfinding_requests),
+                    .after(crate::navmesh::NavmeshSystemSet::Last),
             )
             // add work systems
             .add_systems(

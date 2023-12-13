@@ -5,14 +5,36 @@ use self::components::{Navmesh, PathfindAnswer, PathfindRequest, ToggleNavmeshDe
 use bevy::prelude::*;
 pub use systems::get_pathing;
 
+#[derive(SystemSet, Hash, Debug, Clone, Eq, PartialEq)]
+pub enum NavmeshSystemSet {
+    First,
+    Update,
+    Last,
+}
+
 pub struct NavmeshPlugin;
 
 impl Plugin for NavmeshPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Navmesh>()
             .init_resource::<ToggleNavmeshDebug>()
-            .add_systems(Update, systems::debug_navmesh)
-            .add_systems(Update, systems::listen_for_pathfinding_requests)
+            .configure_sets(
+                Update,
+                (
+                    NavmeshSystemSet::First,
+                    NavmeshSystemSet::Update,
+                    NavmeshSystemSet::Last,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                Update,
+                (
+                    systems::debug_navmesh,
+                    systems::listen_for_pathfinding_requests,
+                )
+                    .in_set(NavmeshSystemSet::Update),
+            )
             .add_event::<PathfindRequest>()
             .add_event::<PathfindAnswer>();
     }
