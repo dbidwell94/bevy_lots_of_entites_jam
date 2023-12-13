@@ -10,7 +10,6 @@ use std::collections::VecDeque;
 pub enum PawnSystemSet {
     Move,
     Work,
-    Pathfind,
     Attack,
 }
 
@@ -30,7 +29,6 @@ impl Plugin for PawnPlugin {
                     PawnSystemSet::Move,
                     PawnSystemSet::Work,
                     PawnSystemSet::Attack,
-                    PawnSystemSet::Pathfind,
                 )
                     .chain()
                     .run_if(in_state(GameState::Main))
@@ -58,20 +56,14 @@ impl Plugin for PawnPlugin {
                     .chain()
                     .in_set(PawnSystemSet::Attack),
             )
-            // add pathfinding systems
             .add_systems(
                 Update,
                 (
                     systems::retry_pathfinding,
                     systems::enemy_search_for_factory,
+                    systems::listen_for_pathfinding_answers,
+                    systems::move_pawn,
                 )
-                    .chain()
-                    .in_set(PawnSystemSet::Pathfind),
-            )
-            // add movement systems
-            .add_systems(
-                Update,
-                (systems::listen_for_pathfinding_answers, systems::move_pawn)
                     .chain()
                     .in_set(PawnSystemSet::Move),
             )

@@ -11,7 +11,7 @@ use crate::{
     pawn::components::*,
     utils::*,
 };
-use crate::{CursorPosition, GameResources, GameState, Input, SIZE, TILE_SIZE};
+use crate::{CursorPosition, GameResources, GameState, SIZE, TILE_SIZE};
 use bevy::ecs::query::ReadOnlyWorldQuery;
 use bevy::prelude::*;
 use bevy::utils::{HashMap, HashSet};
@@ -770,6 +770,7 @@ pub fn spawn_enemy_pawns(
     };
 
     if input.just_pressed(crate::Input::DebugSpawnPawn) && mouse_position.0.is_some() {
+        #[cfg(debug_assertions)]
         spawn_enemy(mouse_position.0.unwrap().tile_pos_to_world());
     }
 
@@ -997,7 +998,7 @@ pub fn attack_pawn(
 
         let mut q_all_pawns = q_all_pawns.p2();
 
-        let Ok((_, entity_transform, _, maybe_order)) = q_all_pawns.get(entity) else {
+        let Ok((_, entity_transform, _, _)) = q_all_pawns.get(entity) else {
             continue;
         };
         let entity_transform = entity_transform.clone();
