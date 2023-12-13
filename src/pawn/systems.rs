@@ -19,7 +19,7 @@ use leafwing_input_manager::prelude::*;
 use rand::prelude::*;
 use std::collections::VecDeque;
 
-const INITIAL_PAWN_COUNT: usize = 5;
+const INITIAL_PAWN_COUNT: usize = 250;
 const MOVE_SPEED: f32 = 60.;
 const MAX_RESOURCES: usize = 15;
 const RESOURCE_GAIN_RATE: usize = 1;
@@ -610,6 +610,7 @@ pub fn search_for_attack_target_pawn(
     >,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
+    #[derive(Debug)]
     struct PawnAttacking {
         pawn_entity: Entity,
         pawn_location: Vec2,
@@ -920,7 +921,15 @@ pub fn attack_pawn(
                 With<Enemy>,
             ),
         >,
-        Query<(Entity, &Transform, &mut Pawn), With<Pawn>>,
+        Query<
+            (
+                Entity,
+                &Transform,
+                &mut Pawn,
+                Option<&WorkOrder<work_order::AttackPawn>>,
+            ),
+            With<Pawn>,
+        >,
     )>,
     mut game_resources: ResMut<GameResources>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
@@ -988,12 +997,13 @@ pub fn attack_pawn(
 
         let mut q_all_pawns = q_all_pawns.p2();
 
-        let Ok((_, entity_transform, _)) = q_all_pawns.get(entity) else {
+        let Ok((_, entity_transform, _, maybe_order)) = q_all_pawns.get(entity) else {
             continue;
         };
         let entity_transform = entity_transform.clone();
 
-        let Ok((_, attacking_entity_transform, mut pawn)) = q_all_pawns.get_mut(attacking_entity)
+        let Ok((_, attacking_entity_transform, mut pawn, maybe_attacking_entity_work_order)) =
+            q_all_pawns.get_mut(attacking_entity)
         else {
             commands
                 .entity(entity)
@@ -1032,6 +1042,15 @@ pub fn attack_pawn(
             destroyed_pawns.insert(attacking_entity);
 
             // drop stone if carrying any
+        }
+
+        if maybe_attacking_entity_work_order.is_none() {
+            commands
+                .entity(attacking_entity)
+                .add_work_order(work_order::AttackPawn {
+                    pawn_entity: entity,
+                })
+                .add_status(pawn_status::Attacking);
         }
     }
 
