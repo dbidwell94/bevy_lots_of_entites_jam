@@ -19,7 +19,7 @@ use leafwing_input_manager::prelude::*;
 use rand::prelude::*;
 use std::collections::VecDeque;
 
-const INITIAL_PAWN_COUNT: usize = 250;
+const INITIAL_PAWN_COUNT: usize = 10;
 const MOVE_SPEED: f32 = 60.;
 const MAX_RESOURCES: usize = 15;
 const RESOURCE_GAIN_RATE: usize = 1;
