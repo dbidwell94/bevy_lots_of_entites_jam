@@ -1,5 +1,5 @@
 pub mod components;
-mod systems;
+pub mod systems;
 
 use self::components::{Navmesh, PathfindAnswer, PathfindRequest, ToggleNavmeshDebug};
 use bevy::prelude::*;

@@ -8,6 +8,7 @@ pub struct GameStateUIPlugin;
 impl Plugin for GameStateUIPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Main), game_state_ui)
+            .add_systems(OnExit(GameState::Main), destroy_game_state_ui)
             .add_systems(
                 Update,
                 ((update_resource_counter, update_pawn_counter).run_if(
@@ -102,6 +103,12 @@ fn game_state_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         .entity(resource_entity.unwrap())
         .insert(GameResourceCounter);
     commands.entity(root_entity).insert(GameStateUI);
+}
+
+fn destroy_game_state_ui(mut commands: Commands, query: Query<Entity, With<GameStateUI>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 fn update_resource_counter(

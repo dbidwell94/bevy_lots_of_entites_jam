@@ -11,12 +11,13 @@ use crate::{
     utils::*,
 };
 use crate::{GameResources, GameState, SIZE, TILE_SIZE};
+use bevy::ecs::query::ReadOnlyWorldQuery;
 use bevy::prelude::*;
-use bevy::utils::HashSet;
+use bevy::utils::{HashMap, HashSet};
 use rand::prelude::*;
 use std::collections::VecDeque;
 
-const INITIAL_PAWN_COUNT: usize = 30;
+const INITIAL_PAWN_COUNT: usize = 5;
 const MOVE_SPEED: f32 = 60.;
 const MAX_RESOURCES: usize = 15;
 const RESOURCE_GAIN_RATE: usize = 1;
@@ -52,7 +53,7 @@ fn spawn_pawn_in_random_location(
                 animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                 mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                 moving: false,
-                search_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
+                search_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                 retry_pathfinding_timer: Timer::from_seconds(1., TimerMode::Once),
             },
             character_facing: CharacterFacing::Left,
@@ -152,11 +153,6 @@ pub fn work_idle_pawns(
     }
 
     for (entity, transform, resources) in &mut q_pawns {
-        commands
-            .entity(entity)
-            .clear_status()
-            .try_insert(PawnStatus(Pathfinding));
-
         // check if the pawn is full on resources
         if resources.0 >= MAX_RESOURCES {
             commands
@@ -216,13 +212,17 @@ pub fn work_idle_pawns(
             search_radius += 1;
         }
         if let Some(stone_location) = stone_location {
+            commands
+                .entity(entity)
+                .clear_status()
+                .try_insert(PawnStatus(Pathfinding))
+                .add_work_order(MineStone {
+                    stone_entity: stone_entity.unwrap(),
+                });
             pathfinding_event_writer.send(PathfindRequest {
                 start: grid_location,
                 end: stone_location,
                 entity,
-            });
-            commands.entity(entity).add_work_order(MineStone {
-                stone_entity: stone_entity.unwrap(),
             });
         }
     }
@@ -235,6 +235,10 @@ pub fn listen_for_pathfinding_answers(
 ) {
     for evt in answer_events.read() {
         let Ok(mut pawn) = q_pawns.get_mut(evt.entity) else {
+            error!(
+                "Pawn {:?} received pathfinding answer, but it was not ready to listen!",
+                evt.entity
+            );
             continue;
         };
 
@@ -255,20 +259,24 @@ pub fn listen_for_pathfinding_answers(
 }
 
 pub fn move_pawn(
-    mut q_pawn: Query<
-        (&mut Transform, &mut Pawn, &mut CharacterFacing),
-        Without<PawnStatus<pawn_status::Attacking>>,
-    >,
-    mut q_attacking_pawns: Query<&mut Pawn, With<PawnStatus<pawn_status::Attacking>>>,
+    mut commands: Commands,
+    mut q_pawn: ParamSet<(
+        Query<&mut Pawn, With<PawnStatus<pawn_status::Attacking>>>,
+        Query<
+            (&mut Transform, &mut Pawn, &mut CharacterFacing),
+            Without<PawnStatus<pawn_status::Attacking>>,
+        >,
+        Query<
+            (Entity, &Pawn),
+            (
+                With<PawnStatus<pawn_status::Moving>>,
+                Without<WorkOrder<dyn work_order::OrderItem>>,
+            ),
+        >,
+    )>,
     time: Res<Time>,
 ) {
-    // stop the pawn in place if it's attacking
-    for mut pawn in &mut q_attacking_pawns {
-        pawn.moving = false;
-        pawn.move_path.clear();
-    }
-
-    for (mut transform, mut pawn, mut facing) in &mut q_pawn {
+    for (mut transform, mut pawn, mut facing) in &mut q_pawn.p1() {
         let current_grid = transform.translation.world_pos_to_tile();
 
         if pawn.move_to.is_none() {
@@ -301,6 +309,23 @@ pub fn move_pawn(
         }
         if (path - current_grid).length() < 0.2 {
             pawn.move_to = pawn.move_path.pop_front();
+        }
+    }
+
+    // stop the pawn in place if it's attacking
+    for mut pawn in &mut q_pawn.p0() {
+        pawn.moving = false;
+        pawn.move_path.clear();
+    }
+
+    // cleanup pawns that are moving but have no work order
+    for (entity, pawn) in &q_pawn.p2() {
+        if pawn.move_path.is_empty() && !pawn.moving {
+            commands
+                .entity(entity)
+                .clear_status()
+                // .clear_work_order()
+                .try_insert(PawnStatus(pawn_status::Idle));
         }
     }
 }
@@ -585,60 +610,123 @@ pub fn retry_pathfinding(
     pathfinding_event_writer.send_batch(pathfinding_requests);
 }
 
-pub fn pawn_search_for_enemies(
+pub fn search_for_attack_target_pawn(
     mut commands: Commands,
-    mut q_pawns: Query<
-        (Entity, &GlobalTransform, &Pawn),
+    q_pawns: Query<
+        (Entity, &Pawn, &Transform),
         (
-            Without<WorkOrder<work_order::AttackPawn>>,
-            Without<Enemy>,
             With<Pawn>,
+            Without<Enemy>,
+            Or<(
+                Without<WorkOrder<work_order::AttackPawn>>,
+                Without<PawnStatus<pawn_status::Attacking>>,
+            )>,
         ),
     >,
-    q_enemies: Query<(Entity, &GlobalTransform), (With<Enemy>, With<Pawn>)>,
+    q_enemies: Query<
+        (Entity, &Pawn, &Transform),
+        (
+            With<Pawn>,
+            With<Enemy>,
+            Or<(
+                Without<WorkOrder<work_order::AttackPawn>>,
+                Without<PawnStatus<pawn_status::Attacking>>,
+            )>,
+        ),
+    >,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
-    for (pawn_entity, pawn_transform, pawn) in &mut q_pawns {
-        let pawn_pos = pawn_transform.translation().world_pos_to_tile();
+    struct PawnAttacking {
+        pawn_entity: Entity,
+        pawn_location: Vec2,
+        target_entity: Entity,
+        target_location: Vec2,
+    }
+    fn find_pawns_to_attack(
+        search_query: &Query<(Entity, &Pawn, &Transform), impl ReadOnlyWorldQuery>,
+        to_attack_query: &Query<(Entity, &Pawn, &Transform), impl ReadOnlyWorldQuery>,
+        attack_map: &mut HashMap<Entity, Vec<PawnAttacking>>,
+    ) {
+        for (pawn_entity, pawn, transform) in search_query {
+            if !pawn.search_timer.finished() {
+                continue;
+            }
+            let pawn_position = transform.world_pos_to_tile();
+            let mut results = to_attack_query
+                .iter()
+                .filter(|&(_, _, enemy_pos)| {
+                    let enemy_position = enemy_pos.world_pos_to_tile();
+                    (enemy_position - pawn_position).length() <= ENEMY_TILE_RANGE as f32
+                })
+                .collect::<Vec<_>>();
+            results.sort_by(|&(_, _, a), &(_, _, b)| {
+                let a_distance = (a.world_pos_to_tile() - pawn_position).length();
+                let b_distance = (b.world_pos_to_tile() - pawn_position).length();
+                a_distance.partial_cmp(&b_distance).unwrap()
+            });
+            let Some((enemy_entity, _, enemy_transform)) = results.into_iter().next() else {
+                continue;
+            };
 
-        if !pawn.search_timer.finished() {
-            continue;
-        }
+            let pawn_attacking = PawnAttacking {
+                pawn_entity,
+                target_entity: enemy_entity,
+                pawn_location: pawn_position,
+                target_location: enemy_transform.world_pos_to_tile(),
+            };
 
-        let mut closest: Option<(Vec2, Entity)> = None;
-
-        for (enemy_entity, enemy_transform) in &q_enemies {
-            // check if the pawn is within range of the enemy
-            let enemy_pos = enemy_transform.translation().world_pos_to_tile();
-
-            if (enemy_pos - pawn_pos).length() < ENEMY_TILE_RANGE as f32 {
-                // check if the pawn is closer than the current closest pawn
-                if let Some((closest_pos, _)) = closest {
-                    if (enemy_pos - pawn_pos).length() < (closest_pos - pawn_pos).length() {
-                        closest = Some((enemy_pos, enemy_entity));
-                    }
-                } else {
-                    closest = Some((enemy_pos, enemy_entity));
-                }
+            if attack_map.contains_key(&enemy_entity) {
+                attack_map
+                    .get_mut(&enemy_entity)
+                    .unwrap()
+                    .push(pawn_attacking);
+            } else {
+                attack_map.insert(enemy_entity, vec![pawn_attacking]);
             }
         }
-
-        if let Some((closest_pos, enemy_entity)) = closest {
-            commands
-                .entity(pawn_entity)
-                .clear_status()
-                .try_insert(PawnStatus(pawn_status::Pathfinding))
-                .add_work_order(work_order::AttackPawn {
-                    pawn_entity: enemy_entity,
-                });
-
-            pathfinding_event_writer.send(PathfindRequest {
-                end: closest_pos,
-                entity: pawn_entity,
-                start: pawn_pos,
-            });
-        }
     }
+
+    // A map which contains the target of the attack, and the details about the attack
+    let mut attack_map = HashMap::<Entity, Vec<PawnAttacking>>::new();
+
+    find_pawns_to_attack(&q_pawns, &q_enemies, &mut attack_map);
+    find_pawns_to_attack(&q_enemies, &q_pawns, &mut attack_map);
+
+    let nav_requests = attack_map
+        .values()
+        .into_iter()
+        .flat_map(|v| {
+            v.into_iter().map(
+                |&PawnAttacking {
+                     pawn_entity,
+                     pawn_location,
+                     target_location,
+                     target_entity,
+                 }| {
+                    (
+                        PathfindRequest {
+                            start: pawn_location,
+                            end: target_location,
+                            entity: pawn_entity,
+                        },
+                        target_entity,
+                    )
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for &(PathfindRequest { entity, .. }, target_entity) in &nav_requests {
+        commands
+            .entity(entity)
+            .clear_status()
+            .try_insert(PawnStatus(Pathfinding))
+            .add_work_order(work_order::AttackPawn {
+                pawn_entity: target_entity,
+            });
+    }
+
+    pathfinding_event_writer.send_batch(nav_requests.into_iter().map(|(r, _)| r));
 }
 
 pub fn spawn_enemy_pawns(
@@ -698,7 +786,7 @@ pub fn spawn_enemy_pawns(
                     move_to: None,
                     health: 100,
                     max_health: 100,
-                    search_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
+                    search_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                     animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                     mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                     retry_pathfinding_timer: Timer::from_seconds(1., TimerMode::Once),
@@ -774,57 +862,6 @@ pub fn enemy_search_for_factory(
     }
 }
 
-pub fn enemy_search_for_pawns(
-    mut commands: Commands,
-    q_enemy_pawns: Query<
-        (Entity, &GlobalTransform, &Pawn),
-        (With<Enemy>, Without<WorkOrder<work_order::AttackPawn>>),
-    >,
-    q_pawns: Query<(Entity, &GlobalTransform), (With<Pawn>, Without<Enemy>)>,
-    mut pathfinding_event_writer: EventWriter<PathfindRequest>,
-) {
-    for (enemy_entity, enemy_transform, enemy) in &q_enemy_pawns {
-        if !enemy.search_timer.finished() {
-            continue;
-        }
-        let enemy_grid_pos = enemy_transform.translation().world_pos_to_tile();
-
-        let mut closest: Option<(Vec2, Entity)> = None;
-
-        for (pawn_entity, pawn_transform) in &q_pawns {
-            // check if the pawn is within range of the enemy
-            let pawn_tile_pos = pawn_transform.translation().world_pos_to_tile();
-
-            if (pawn_tile_pos - enemy_grid_pos).length() < ENEMY_TILE_RANGE as f32 {
-                // check if the pawn is closer than the current closest pawn
-                if let Some((closest_pos, _)) = closest {
-                    if (pawn_tile_pos - enemy_grid_pos).length()
-                        < (closest_pos - enemy_grid_pos).length()
-                    {
-                        closest = Some((pawn_tile_pos, pawn_entity));
-                    }
-                } else {
-                    closest = Some((pawn_tile_pos, pawn_entity));
-                }
-            }
-        }
-
-        if let Some((closest_pos, pawn_entity)) = closest {
-            commands
-                .entity(enemy_entity)
-                .clear_status()
-                .try_insert(PawnStatus(pawn_status::Pathfinding))
-                .add_work_order(work_order::AttackPawn { pawn_entity });
-
-            pathfinding_event_writer.send(PathfindRequest {
-                end: closest_pos,
-                entity: enemy_entity,
-                start: enemy_grid_pos,
-            });
-        }
-    }
-}
-
 pub fn update_pathfinding_to_pawn(
     mut commands: Commands,
     q_all_attacking_pawns: Query<
@@ -834,7 +871,11 @@ pub fn update_pathfinding_to_pawn(
             &GlobalTransform,
             &mut Pawn,
         ),
-        (With<Pawn>, With<WorkOrder<work_order::AttackPawn>>),
+        (
+            With<Pawn>,
+            With<WorkOrder<work_order::AttackPawn>>,
+            Without<PawnStatus<pawn_status::Attacking>>,
+        ),
     >,
     q_all_pawns: Query<&GlobalTransform, With<Pawn>>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
@@ -845,7 +886,7 @@ pub fn update_pathfinding_to_pawn(
             let grid_location = transform.translation().world_pos_to_tile();
             let other_grid_location = other_transform.translation().world_pos_to_tile();
 
-            if (other_grid_location - grid_location).length() <= 1.2 {
+            if (other_grid_location - grid_location).length() <= 2. {
                 commands
                     .entity(entity)
                     .clear_status()
@@ -893,6 +934,13 @@ pub fn attack_pawn(
             With<Pawn>,
             With<PawnStatus<pawn_status::Attacking>>,
             With<Enemy>,
+        ),
+    >,
+    q_pawns_attacking_no_work_order: Query<
+        Entity,
+        (
+            With<PawnStatus<pawn_status::Attacking>>,
+            Without<WorkOrder<work_order::AttackPawn>>,
         ),
     >,
     mut game_resources: ResMut<GameResources>,
@@ -1016,5 +1064,12 @@ pub fn attack_pawn(
 
             // drop stone if carrying any
         }
+    }
+
+    for entity in &q_pawns_attacking_no_work_order {
+        commands
+            .entity(entity)
+            .clear_status()
+            .try_insert(PawnStatus(pawn_status::Idle));
     }
 }

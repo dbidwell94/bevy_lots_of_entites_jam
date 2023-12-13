@@ -1,17 +1,17 @@
 pub mod components;
 mod systems;
 
-use self::components::work_order::{self, BuildItem, PrototypeWorkOrder, WorkOrder};
+use self::components::work_order::{BuildItem, WorkOrder};
 use crate::GameState;
 use bevy::prelude::*;
 use std::collections::VecDeque;
 
 #[derive(SystemSet, Hash, Debug, Clone, Eq, PartialEq)]
 pub enum PawnSystemSet {
-    Work,
-    Attack,
-    Pathfind,
     Move,
+    Work,
+    Pathfind,
+    Attack,
 }
 
 pub struct PawnPlugin;
@@ -30,20 +30,21 @@ impl Plugin for PawnPlugin {
             .configure_sets(
                 Update,
                 (
-                    PawnSystemSet::Work,
                     PawnSystemSet::Attack,
-                    PawnSystemSet::Pathfind,
                     PawnSystemSet::Move,
+                    PawnSystemSet::Work,
+                    PawnSystemSet::Pathfind,
                 )
                     .chain()
-                    .run_if(in_state(GameState::Main)),
+                    .run_if(in_state(GameState::Main))
+                    .after(crate::navmesh::systems::listen_for_pathfinding_requests),
             )
             // add work systems
             .add_systems(
                 Update,
                 (
-                    systems::work_idle_pawns,
                     systems::mine_stone,
+                    systems::work_idle_pawns,
                     systems::return_to_factory,
                 )
                     .chain()
@@ -53,9 +54,7 @@ impl Plugin for PawnPlugin {
             .add_systems(
                 Update,
                 (
-                    systems::enemy_search_for_factory,
-                    systems::enemy_search_for_pawns,
-                    systems::pawn_search_for_enemies,
+                    systems::update_pathfinding_to_pawn,
                     systems::attack_pawn,
                 )
                     .chain()
@@ -66,7 +65,8 @@ impl Plugin for PawnPlugin {
                 Update,
                 (
                     systems::retry_pathfinding,
-                    systems::update_pathfinding_to_pawn,
+                    systems::search_for_attack_target_pawn,
+                    systems::enemy_search_for_factory,
                 )
                     .chain()
                     .in_set(PawnSystemSet::Pathfind),
@@ -88,6 +88,7 @@ impl Plugin for PawnPlugin {
                     systems::spawn_enemy_pawns,
                     systems::tick_timers,
                 )
+                    .chain()
                     .run_if(in_state(GameState::Main)),
             );
     }
@@ -96,7 +97,6 @@ impl Plugin for PawnPlugin {
 #[derive(Resource, Default)]
 pub struct WorkQueue {
     pub build_queue: VecDeque<WorkOrder<BuildItem>>,
-    pub work_queue: VecDeque<PrototypeWorkOrder<dyn work_order::OrderItem>>,
 }
 
 #[derive(Event, Debug)]

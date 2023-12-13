@@ -4,7 +4,7 @@ pub use pawn_status::ClearStatus;
 use std::collections::VecDeque;
 pub use work_order::ClearWorkOrder;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct Pawn {
     pub move_path: VecDeque<Vec2>,
     pub move_to: Option<Vec2>,
@@ -106,8 +106,21 @@ pub mod work_order {
                         pub $field: $ty
                     ),*
                 }
-                impl OrderItem for $name {}
+                impl OrderItem for $name {
+                    fn to_struct(&self) -> OrderType {
+                        let any_self = self as &dyn std::any::Any;
+                        let self_obj = any_self.downcast_ref::<$name>().unwrap();
+
+                        OrderType::$name(self_obj)
+                    }
+                }
             )*
+
+            pub enum OrderType<'a> {
+                $(
+                    $name(&'a $name),
+                )*
+            }
 
             pub trait ClearWorkOrder {
                 fn clear_work_order(&mut self) -> &mut Self;
@@ -135,13 +148,14 @@ pub mod work_order {
         };
     }
 
-    pub trait OrderItem: Sync + Send {}
+    pub trait OrderItem: Sync + Send {
+        fn to_struct(&self) -> OrderType;
+    }
+
+    pub trait Queueable: OrderItem {}
 
     #[derive(Component)]
     pub struct WorkOrder<T: OrderItem + ?Sized>(pub Box<T>);
-
-    #[derive(Component)]
-    pub struct PrototypeWorkOrder<T: OrderItem + ?Sized>(pub Box<T>);
 
     work_orders!(
         struct MineStone {

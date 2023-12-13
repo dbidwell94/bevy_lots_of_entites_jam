@@ -69,14 +69,7 @@ fn main() {
                 }),
             GameAssets,
             #[cfg(debug_assertions)]
-            FilterQueryInspectorPlugin::<(
-                With<pawn::components::Pawn>,
-                With<
-                    pawn::components::pawn_status::PawnStatus<
-                        pawn::components::pawn_status::Moving,
-                    >,
-                >,
-            )>::default(),
+            FilterQueryInspectorPlugin::<With<pawn::components::Pawn>>::default(),
         ))
         .add_plugins(InputManagerPlugin::<Input>::default())
         .add_plugins((
@@ -162,6 +155,7 @@ pub fn build_map(
     dirt_texture: Res<GroundBase>,
     mut navmesh: ResMut<navmesh::components::Navmesh>,
 ) {
+    commands.remove_resource::<bevy::ecs::event::EventUpdateSignal>();
     let mut camera_bundle = Camera2dBundle::default();
 
     camera_bundle.projection.scale = 0.50;
