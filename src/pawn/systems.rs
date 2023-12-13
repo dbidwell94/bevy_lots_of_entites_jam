@@ -1,9 +1,10 @@
-use super::components::pawn_status::{Idle, Pathfinding, PawnStatus};
+use super::components::pawn_status::PawnStatus;
 use super::components::work_order::{AddWorkOrder, MineStone, WorkOrder};
 use super::{EnemyWave, SpawnPawnRequestEvent};
 use crate::factory::components::{Factory, Placed};
 use crate::navmesh::components::{NavTileOccupant, Navmesh, PathfindAnswer, PathfindRequest};
 use crate::navmesh::get_pathing;
+use crate::pawn::components::pawn_status::AddStatus;
 use crate::stone::{Stone, StoneKind};
 use crate::{
     assets::{CharacterFacing, MalePawns},
@@ -25,6 +26,7 @@ const PAWN_COST: usize = 100;
 const PAWN_ATTACK_STRENGTH: usize = 5;
 const ENEMY_TILE_RANGE: usize = 10;
 const ENEMY_ATTACK_STRENGTH: usize = 10;
+const PAWN_SEARCH_TIMER: f32 = 0.75;
 
 fn spawn_pawn_in_random_location(
     commands: &mut Commands,
@@ -53,7 +55,7 @@ fn spawn_pawn_in_random_location(
                 animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                 mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                 moving: false,
-                search_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
+                search_timer: Timer::from_seconds(PAWN_SEARCH_TIMER, TimerMode::Repeating),
                 retry_pathfinding_timer: Timer::from_seconds(1., TimerMode::Once),
             },
             character_facing: CharacterFacing::Left,
@@ -68,7 +70,7 @@ fn spawn_pawn_in_random_location(
                 },
                 ..Default::default()
             },
-            pawn_status: PawnStatus(Idle),
+            pawn_status: PawnStatus(Box::new(pawn_status::Idle)),
             resources: CarriedResources(0),
         },))
         .id();
@@ -126,7 +128,7 @@ pub fn work_idle_pawns(
             Without<WorkOrder<work_order::MineStone>>,
             Without<PawnStatus<pawn_status::Moving>>,
             Without<WorkOrder<work_order::AttackPawn>>,
-            With<PawnStatus<Idle>>,
+            With<PawnStatus<pawn_status::Idle>>,
             Without<Enemy>,
         ),
     >,
@@ -157,8 +159,7 @@ pub fn work_idle_pawns(
         if resources.0 >= MAX_RESOURCES {
             commands
                 .entity(entity)
-                .clear_status()
-                .try_insert(PawnStatus(pawn_status::Pathfinding))
+                .add_status(pawn_status::Pathfinding)
                 .add_work_order(work_order::ReturnToFactory {});
 
             let grid_location = transform.translation.world_pos_to_tile();
@@ -214,8 +215,7 @@ pub fn work_idle_pawns(
         if let Some(stone_location) = stone_location {
             commands
                 .entity(entity)
-                .clear_status()
-                .try_insert(PawnStatus(Pathfinding))
+                .add_status(pawn_status::Pathfinding)
                 .add_work_order(MineStone {
                     stone_entity: stone_entity.unwrap(),
                 });
@@ -235,25 +235,17 @@ pub fn listen_for_pathfinding_answers(
 ) {
     for evt in answer_events.read() {
         let Ok(mut pawn) = q_pawns.get_mut(evt.entity) else {
-            error!(
-                "Pawn {:?} received pathfinding answer, but it was not ready to listen!",
-                evt.entity
-            );
             continue;
         };
 
         if let Some(path) = &evt.path {
             pawn.move_path = path.clone().into();
-            commands
-                .entity(evt.entity)
-                .clear_status()
-                .try_insert(PawnStatus(pawn_status::Moving));
+            commands.entity(evt.entity).add_status(pawn_status::Moving);
         } else {
             commands
                 .entity(evt.entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::PathfindingError));
+                .add_status(pawn_status::PathfindingError);
         }
     }
 }
@@ -312,21 +304,17 @@ pub fn move_pawn(
         }
     }
 
+    // cleanup pawns that are moving but have no work order
+    for (entity, pawn) in &q_pawn.p2() {
+        if pawn.move_path.is_empty() && !pawn.moving {
+            commands.entity(entity).add_status(pawn_status::Idle);
+        }
+    }
+
     // stop the pawn in place if it's attacking
     for mut pawn in &mut q_pawn.p0() {
         pawn.moving = false;
         pawn.move_path.clear();
-    }
-
-    // cleanup pawns that are moving but have no work order
-    for (entity, pawn) in &q_pawn.p2() {
-        if pawn.move_path.is_empty() && !pawn.moving {
-            commands
-                .entity(entity)
-                .clear_status()
-                // .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
-        }
     }
 }
 
@@ -414,10 +402,7 @@ pub fn mine_stone(
     // if they have, then we need to set their PawnStatus to Mining.
     for (pawn_entity, pawn) in &q_pawns_moving_to_stone {
         if !pawn.moving {
-            commands
-                .entity(pawn_entity)
-                .clear_status()
-                .try_insert(PawnStatus(pawn_status::Mining));
+            commands.entity(pawn_entity).add_status(pawn_status::Mining);
         }
     }
 
@@ -425,8 +410,7 @@ pub fn mine_stone(
         if carried_resources.0 >= MAX_RESOURCES {
             commands
                 .entity(pawn_entity)
-                .clear_status()
-                .try_insert(PawnStatus(pawn_status::Idle))
+                .add_status(pawn_status::Idle)
                 .add_work_order(work_order::ReturnToFactory {});
 
             continue;
@@ -438,9 +422,8 @@ pub fn mine_stone(
             else {
                 commands
                     .entity(pawn_entity)
-                    .clear_status()
                     .clear_work_order()
-                    .try_insert(PawnStatus(Idle));
+                    .add_status(pawn_status::Idle);
                 continue;
             };
 
@@ -464,9 +447,8 @@ pub fn mine_stone(
                 commands.entity(stone_entity).despawn_recursive();
                 commands
                     .entity(pawn_entity)
-                    .clear_status()
                     .clear_work_order()
-                    .try_insert(PawnStatus(Idle));
+                    .add_status(pawn_status::Idle);
                 destroyed_stones.insert(stone_entity);
             }
         }
@@ -507,8 +489,7 @@ pub fn return_to_factory(
 
         commands
             .entity(pawn_entity)
-            .clear_status()
-            .try_insert(PawnStatus(pawn_status::Pathfinding));
+            .add_status(pawn_status::Pathfinding);
 
         pathfinding_event_writer.send(PathfindRequest {
             start: pawn_location,
@@ -523,9 +504,8 @@ pub fn return_to_factory(
         if !pawn.moving {
             commands
                 .entity(pawn_entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
+                .add_status(pawn_status::Idle);
 
             resources.stone += carried_resources.0;
             carried_resources.0 = 0;
@@ -573,7 +553,7 @@ pub fn tick_timers(mut q_pawns: Query<&mut Pawn>, time: Res<Time>) {
 pub fn retry_pathfinding(
     mut commands: Commands,
     mut q_pawns: Query<
-        (Entity, &mut Pawn, &GlobalTransform),
+        (Entity, &mut Pawn, &Transform),
         With<PawnStatus<pawn_status::PathfindingError>>,
     >,
     q_factory: Query<&GlobalTransform, (With<Factory>, With<Placed>)>,
@@ -590,13 +570,12 @@ pub fn retry_pathfinding(
 
         commands
             .entity(entity)
-            .clear_status()
             .clear_work_order()
-            .try_insert(PawnStatus(pawn_status::Idle));
+            .add_status(pawn_status::Idle);
 
         pawn.retry_pathfinding_timer.reset();
 
-        let pawn_pos = pawn_transform.translation().world_pos_to_tile();
+        let pawn_pos = pawn_transform.translation.world_pos_to_tile();
         let factory_pos = factory_transform.translation().world_pos_to_tile();
         pathfinding_requests.push(PathfindRequest {
             start: pawn_pos,
@@ -617,10 +596,7 @@ pub fn search_for_attack_target_pawn(
         (
             With<Pawn>,
             Without<Enemy>,
-            Or<(
-                Without<WorkOrder<work_order::AttackPawn>>,
-                Without<PawnStatus<pawn_status::Attacking>>,
-            )>,
+            Without<WorkOrder<work_order::AttackPawn>>,
         ),
     >,
     q_enemies: Query<
@@ -628,10 +604,7 @@ pub fn search_for_attack_target_pawn(
         (
             With<Pawn>,
             With<Enemy>,
-            Or<(
-                Without<WorkOrder<work_order::AttackPawn>>,
-                Without<PawnStatus<pawn_status::Attacking>>,
-            )>,
+            Without<WorkOrder<work_order::AttackPawn>>,
         ),
     >,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
@@ -719,8 +692,7 @@ pub fn search_for_attack_target_pawn(
     for &(PathfindRequest { entity, .. }, target_entity) in &nav_requests {
         commands
             .entity(entity)
-            .clear_status()
-            .try_insert(PawnStatus(Pathfinding))
+            .add_status(pawn_status::Pathfinding)
             .add_work_order(work_order::AttackPawn {
                 pawn_entity: target_entity,
             });
@@ -786,7 +758,7 @@ pub fn spawn_enemy_pawns(
                     move_to: None,
                     health: 100,
                     max_health: 100,
-                    search_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
+                    search_timer: Timer::from_seconds(PAWN_SEARCH_TIMER, TimerMode::Repeating),
                     animation_timer: Timer::from_seconds(0.125, TimerMode::Repeating),
                     mine_timer: Timer::from_seconds(0.5, TimerMode::Once),
                     retry_pathfinding_timer: Timer::from_seconds(1., TimerMode::Once),
@@ -809,7 +781,7 @@ pub fn spawn_enemy_pawns(
                     },
                     ..Default::default()
                 },
-                pawn_status: PawnStatus(Idle),
+                pawn_status: PawnStatus(Box::new(pawn_status::Idle)),
                 resources: CarriedResources(0),
             })
             .insert(Enemy)
@@ -835,7 +807,7 @@ pub fn spawn_enemy_pawns(
 pub fn enemy_search_for_factory(
     mut commands: Commands,
     q_enemy_pawns: Query<
-        (Entity, &GlobalTransform),
+        (Entity, &Transform),
         (With<Enemy>, With<PawnStatus<pawn_status::Idle>>),
     >,
     q_factory: Query<&GlobalTransform, (With<Factory>, With<Placed>)>,
@@ -846,7 +818,7 @@ pub fn enemy_search_for_factory(
     };
 
     for (entity, transform) in &q_enemy_pawns {
-        let grid_location = transform.translation().world_pos_to_tile();
+        let grid_location = transform.translation.world_pos_to_tile();
 
         nav_request.send(PathfindRequest {
             start: grid_location,
@@ -856,8 +828,7 @@ pub fn enemy_search_for_factory(
 
         commands
             .entity(entity)
-            .clear_status()
-            .try_insert(PawnStatus(pawn_status::Pathfinding))
+            .add_status(pawn_status::Pathfinding)
             .add_work_order(work_order::AttackFactory {});
     }
 }
@@ -868,7 +839,7 @@ pub fn update_pathfinding_to_pawn(
         (
             Entity,
             &WorkOrder<work_order::AttackPawn>,
-            &GlobalTransform,
+            &Transform,
             &mut Pawn,
         ),
         (
@@ -877,20 +848,17 @@ pub fn update_pathfinding_to_pawn(
             Without<PawnStatus<pawn_status::Attacking>>,
         ),
     >,
-    q_all_pawns: Query<&GlobalTransform, With<Pawn>>,
+    q_all_pawns: Query<&Transform, With<Pawn>>,
     mut pathfinding_event_writer: EventWriter<PathfindRequest>,
 ) {
     for (entity, WorkOrder(boxed_order), transform, pawn) in &q_all_attacking_pawns {
         let other_entity = boxed_order.pawn_entity;
         if let Ok(other_transform) = q_all_pawns.get(other_entity) {
-            let grid_location = transform.translation().world_pos_to_tile();
-            let other_grid_location = other_transform.translation().world_pos_to_tile();
+            let grid_location = transform.translation.world_pos_to_tile();
+            let other_grid_location = other_transform.translation.world_pos_to_tile();
 
             if (other_grid_location - grid_location).length() <= 2. {
-                commands
-                    .entity(entity)
-                    .clear_status()
-                    .try_insert(PawnStatus(pawn_status::Attacking));
+                commands.entity(entity).add_status(pawn_status::Attacking);
                 continue;
             }
 
@@ -898,10 +866,7 @@ pub fn update_pathfinding_to_pawn(
                 continue;
             }
 
-            commands
-                .entity(entity)
-                .clear_status()
-                .try_insert(PawnStatus(pawn_status::Pathfinding));
+            commands.entity(entity).add_status(pawn_status::Pathfinding);
 
             pathfinding_event_writer.send(PathfindRequest {
                 start: grid_location,
@@ -911,9 +876,8 @@ pub fn update_pathfinding_to_pawn(
         } else {
             commands
                 .entity(entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
+                .add_status(pawn_status::Idle);
         }
     }
 }
@@ -965,9 +929,8 @@ pub fn attack_pawn(
         {
             commands
                 .entity(entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
+                .add_status(pawn_status::Idle);
             continue;
         }
 
@@ -992,9 +955,8 @@ pub fn attack_pawn(
         {
             commands
                 .entity(entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
+                .add_status(pawn_status::Idle);
             continue;
         }
         if !pawn.search_timer.finished() {
@@ -1026,9 +988,8 @@ pub fn attack_pawn(
         if destroyed_pawns.contains(&attacking_entity) {
             commands
                 .entity(entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
+                .add_status(pawn_status::Idle);
             continue;
         }
 
@@ -1039,9 +1000,8 @@ pub fn attack_pawn(
         else {
             commands
                 .entity(entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
+                .add_status(pawn_status::Idle);
             continue;
         };
 
@@ -1056,9 +1016,8 @@ pub fn attack_pawn(
 
             commands
                 .entity(entity)
-                .clear_status()
                 .clear_work_order()
-                .try_insert(PawnStatus(pawn_status::Idle));
+                .add_status(pawn_status::Idle);
 
             destroyed_pawns.insert(attacking_entity);
 
@@ -1067,9 +1026,6 @@ pub fn attack_pawn(
     }
 
     for entity in &q_pawns_attacking_no_work_order {
-        commands
-            .entity(entity)
-            .clear_status()
-            .try_insert(PawnStatus(pawn_status::Idle));
+        commands.entity(entity).add_status(pawn_status::Idle);
     }
 }

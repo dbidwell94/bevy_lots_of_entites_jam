@@ -52,6 +52,11 @@ pub mod pawn_status {
                 pub struct $name;
                 impl Status for $name {}
             )*
+
+            pub trait AddStatus {
+                fn add_status<T: 'static + Status>(&mut self, status: T) -> &mut Self;
+            }
+
             pub trait ClearStatus {
                 fn clear_status(&mut self) -> &mut Self;
             }
@@ -63,20 +68,20 @@ pub mod pawn_status {
                     self
                 }
             }
-            pub fn register_trait_queryables(app: &mut App) {
-                use bevy_trait_query::RegisterExt;
-                $(
-                    app.register_component_as::<dyn Status, $name>();
-                )*
+
+            impl AddStatus for EntityCommands<'_, '_, '_> {
+                fn add_status<T: 'static + Status>(&mut self, status: T) -> &mut Self {
+                    self.clear_status();
+                    self.try_insert(PawnStatus(Box::new(status)))
+                }
             }
         }
     }
 
-    #[bevy_trait_query::queryable]
-    pub trait Status {}
+    pub trait Status: Send + Sync {}
 
     #[derive(Component)]
-    pub struct PawnStatus<T: Component + Status>(pub T);
+    pub struct PawnStatus<T: Status + ?Sized>(pub Box<T>);
 
     pawn_status!(
         Idle,

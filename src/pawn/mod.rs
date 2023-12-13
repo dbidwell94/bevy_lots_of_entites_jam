@@ -18,10 +18,6 @@ pub struct PawnPlugin;
 
 impl Plugin for PawnPlugin {
     fn build(&self, app: &mut App) {
-        // register trait queryables
-        components::pawn_status::register_trait_queryables(app);
-        // components::work_order::register_trait_queryables(app);
-
         app.add_systems(OnEnter(GameState::PawnSpawn), systems::initial_pawn_spawn)
             .init_resource::<WorkQueue>()
             .init_resource::<EnemyWave>()
@@ -30,8 +26,8 @@ impl Plugin for PawnPlugin {
             .configure_sets(
                 Update,
                 (
-                    PawnSystemSet::Attack,
                     PawnSystemSet::Move,
+                    PawnSystemSet::Attack,
                     PawnSystemSet::Work,
                     PawnSystemSet::Pathfind,
                 )
@@ -53,10 +49,7 @@ impl Plugin for PawnPlugin {
             // add attack systems
             .add_systems(
                 Update,
-                (
-                    systems::update_pathfinding_to_pawn,
-                    systems::attack_pawn,
-                )
+                (systems::update_pathfinding_to_pawn, systems::attack_pawn)
                     .chain()
                     .in_set(PawnSystemSet::Attack),
             )
